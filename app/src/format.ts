@@ -31,6 +31,14 @@ export function formatClock(iso: string | null): string {
 
 const WEEKDAYS = ["dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."];
 
+/** Instant (ISO 8601) affiché en heure locale du téléphone : « 24/09 à 07:12 ». */
+export function formatLocalDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return MISSING;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)} à ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 /** `2026-09-23` → « mer. 23/09 ». Calculé depuis les composants, sans fuseau. */
 export function formatDayLabel(date: string): string {
   const [y, m, d] = date.split("-").map(Number);
