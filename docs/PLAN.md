@@ -76,6 +76,15 @@ Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteu
 - Les `401` ne sont pas écrits dans `ingest_log` (seuls les appels authentifiés le sont).
 - Les timestamps sortent en UTC (`...Z`), ce que docs/API.md autorise.
 
+### Phase 1 (suite)
+Préparation du déploiement Vercel + Neon (branche `agent/api-backend-vercel`), couverte par `api/test/vercel.test.ts`.
+- Nouvelles variables (voir `.env.example`, docs/API.md) : `READ_TOKEN` (lecture seule, ≥ 32 car., ≠ `INGEST_TOKEN`), `CRON_SECRET` (≥ 16 car.), `CORS_ORIGINS` (origines complètes, sans joker), `DATABASE_SERVERLESS`.
+- **Pour `deploy`** : le point d'entrée Vercel fait `createApp(depsFromEnv(loadEnv(), getDb()))` (`depsFromEnv` dans `api/src/app.ts`) ; `getDb()` et `pnpm --filter api migrate` appliquent `DATABASE_SERVERLESS` (pour les migrations via le pooler, `.simple()` est déjà utilisé ; l'URL directe non poolée convient aussi). Si Hono est monté sous un préfixe (`/api`), les chemins de `vercel.json` (`crons[].path`) doivent le reprendre.
+- **Pour `github-collector`** : `GET /cron/github-sync` exécute la tâche du registre et renvoie sa valeur de retour dans `result` ; `500` si elle lève. `hasJob(name)` et `invokeJob(name)` (erreur propagée, `UnknownJobError`) sont exportés par `api/src/jobs.ts`.
+- **Pour `generative-art`** : `VITE_API_TOKEN` = `READ_TOKEN`, et l'origine de la page dans `CORS_ORIGINS`.
+- Une page d'art sur une URL de prévisualisation Vercel (hôte variable) ne passera pas le CORS : ajouter l'origine explicitement si besoin.
+- Pas testé contre un vrai Neon : les options serverless sont vérifiées sur l'objet client, pas sur le pooler.
+
 ### Phase 3
 Étapes 1 à 3 faites (branche `agent/android-app`). Validées par typecheck, jest (TZ=Europe/Paris), `expo config`, `expo prebuild` (manifeste vérifié) et `expo export` (bundle Android) ; **pas encore sur un vrai téléphone** : construire le development build (voir `app/README.md`) et comparer le tableau des 7 jours avec Health Connect avant l'étape 4.
 - Plugin : `react-native-health-connect` (v4 embarque le plugin Expo). `expo-health-connect` est déprécié et ne doit pas être installé en même temps (classe native en double).

@@ -10,7 +10,11 @@ Node 22 + Hono + Postgres (lib `postgres`). Contrat : [docs/API.md](../docs/API.
 | `INGEST_TOKEN` | oui | token des routes d'écriture, **32 caractères minimum** (`openssl rand -hex 32`), sinon le démarrage est refusé |
 | `PORT` | non (8787) | port d'écoute |
 | `ENABLE_JOBS` | non (`false`) | `true` pour lancer les tâches planifiées (`src/jobs.ts`) |
-| `PROTECT_READS` | non | `true` : `/day` et `/range` exigent aussi le token. Défaut : `true` si `NODE_ENV=production`, `false` sinon |
+| `PROTECT_READS` | non | `true` : `/day` et `/range` exigent un token (`READ_TOKEN` ou `INGEST_TOKEN`). Défaut : `true` si `NODE_ENV=production`, `false` sinon |
+| `READ_TOKEN` | non | token de **lecture seule** (page d'art), 32 caractères minimum, différent d'`INGEST_TOKEN`. Accepté sur `/day` et `/range`, **refusé** en écriture et sur `/cron` |
+| `CRON_SECRET` | non | secret de `GET /cron/:name` (16 caractères minimum). Absent : ces routes répondent `503` |
+| `CORS_ORIGINS` | non | origines autorisées sur `/day` et `/range`, séparées par des virgules (`https://art.example.app,http://localhost:5173`). Vide : aucun en-tête CORS |
+| `DATABASE_SERVERLESS` | non (`false`) | `true` : client `postgres` pour fonctions serverless (`max: 1`, `prepare: false`, timeouts courts), à utiliser avec le pooler Neon |
 
 Elles sont lues depuis l'environnement, puis depuis `api/.env` et `.env` à la racine s'ils existent (sans écraser l'environnement).
 Attention : la valeur d'exemple de `.env.example` (`change-me-long-random-string`) est trop courte, exprès.
@@ -59,7 +63,14 @@ curl -X POST localhost:8787/ingest/health \
   -d '{"days":[{"date":"2026-09-23","sleep_start":null}]}'
 ```
 
-Si `PROTECT_READS=true`, ajouter `-H "Authorization: Bearer $INGEST_TOKEN"` aux lectures.
+Si `PROTECT_READS=true`, ajouter `-H "Authorization: Bearer $READ_TOKEN"` (ou `$INGEST_TOKEN`) aux lectures.
+
+Déclencher une tâche à la main, comme le ferait un Vercel Cron Job :
+
+```bash
+curl localhost:8787/cron/github-sync -H "Authorization: Bearer $CRON_SECRET"
+# {"job":"github-sync","ok":true,"duration_ms":812,"result":...}
+```
 
 Les timestamps (`sleep_start`, `sleep_end`, `updated_at`) sortent en UTC (`Z`) : Postgres ne garde pas le décalage d'origine. Ils ne servent jamais à recalculer `date`.
 
@@ -67,6 +78,7 @@ Les timestamps (`sleep_start`, `sleep_end`, `updated_at`) sortent en UTC (`Z`) :
 
 - `200` succès ; `400` corps ou paramètres invalides, avec `{ error, message, issues: [{ path, message }] }` ;
 - `401` token absent ou faux ; `404` journée absente ou route inconnue ; `413` corps > 1 Mo ; `500` erreur base.
+- `/cron/:name` : `503` sans `CRON_SECRET`, `401` mauvais secret, `404` tâche inconnue, `500` si la tâche lève.
 
 Chaque appel authentifié à `/ingest/health` écrit une ligne dans `ingest_log` (succès comme échec de validation ou d'écriture). Les `401` ne sont pas journalisés.
 
@@ -96,7 +108,12 @@ await db.upsertCommits(...);   // ou directement via l'objet
 
 Ajouter une ligne dans la section « Enregistrements » :
 `registerJob("nom", "15 4 * * *", () => maTache(), { timezone: "Europe/Paris" })`.
-Elles ne tournent que si `ENABLE_JOBS=true`. Une tâche qui lève une erreur est journalisée, sans arrêter le serveur.
+En local, node-cron ne les lance que si `ENABLE_JOBS=true` ; une tâche qui lève une erreur est journalisée, sans arrêter le serveur.
+En serverless (Vercel), node-cron ne tourne pas : les Vercel Cron Jobs appellent `GET /cron/<nom>` (voir docs/API.md), qui exécute la même tâche du registre et renvoie en JSON la valeur qu'elle retourne (`500` si elle lève). Retourner un petit objet résumant le travail fait (ex. `{ upserted, from, to }`) rend les journaux Vercel lisibles.
+
+### Point d'entrée serverless
+
+`createApp(depsFromEnv(loadEnv(), getDb()))` : `depsFromEnv` (dans `src/app.ts`) transmet `INGEST_TOKEN`, `READ_TOKEN`, `CRON_SECRET`, `CORS_ORIGINS` et `PROTECT_READS` ; `getDb()` applique `DATABASE_SERVERLESS`.
 
 ### Routes (`src/app.ts`)
 

@@ -10,7 +10,7 @@ const base = {
 
 describe("env", () => {
   it("accepte une configuration valide avec les valeurs par défaut", () => {
-    expect(loadEnv(base)).toEqual({ ...base, PORT: 8787, ENABLE_JOBS: false, PROTECT_READS: false });
+    expect(loadEnv(base)).toEqual({ ...base, PORT: 8787, ENABLE_JOBS: false, PROTECT_READS: false, CORS_ORIGINS: [], DATABASE_SERVERLESS: false });
   });
 
   it("refuse un INGEST_TOKEN de moins de 32 caractères", () => {

@@ -3,7 +3,7 @@
  * `pnpm --filter api dev` (rechargement) ou `pnpm --filter api start`.
  */
 import { serve } from "@hono/node-server";
-import { createApp } from "./app";
+import { createApp, depsFromEnv } from "./app";
 import { closeDb, getDb } from "./db";
 import { EnvError, loadDotenvFiles, loadEnv } from "./env";
 import { startJobs, stopJobs } from "./jobs";
@@ -20,10 +20,10 @@ try {
 }
 
 const db = getDb();
-const app = createApp({ db, ingestToken: env.INGEST_TOKEN, protectReads: env.PROTECT_READS });
+const app = createApp(depsFromEnv(env, db));
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
-  console.log(`sillage api : http://localhost:${info.port} (lecture ${env.PROTECT_READS ? "protégée" : "publique"})`);
+  console.log(`sillage api : http://localhost:${info.port} (lecture ${env.PROTECT_READS ? "protégée" : "publique"}, CORS : ${env.CORS_ORIGINS.join(", ") || "désactivé"})`);
 });
 
 const jobs = startJobs(env.ENABLE_JOBS);
