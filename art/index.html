@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sillage</title>
+    <link rel="stylesheet" href="/src/pages/day/day.css" />
+  </head>
+  <body>
+    <main class="day">
+      <header class="day__header">
+        <a class="day__nav" id="prev" href="#" aria-label="Jour précédent" title="Jour précédent (←)">←</a>
+        <h1 class="day__date" id="title">Sillage</h1>
+        <a class="day__nav" id="next" href="#" aria-label="Jour suivant" title="Jour suivant (→)">→</a>
+      </header>
+      <figure class="day__frame">
+        <div class="day__art" id="art"></div>
+      </figure>
+      <dl class="day__legend" id="legend"></dl>
+      <p class="day__source" id="source"></p>
+    </main>
+    <script type="module" src="/src/pages/day/main.ts"></script>
+  </body>
+</html>

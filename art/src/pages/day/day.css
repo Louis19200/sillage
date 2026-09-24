@@ -1,0 +1,140 @@
+:root {
+  --paper: #efece6;
+  --ink: #2b2a28;
+  --muted: #8a867e;
+  --line: #d9d4ca;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171716;
+    --ink: #e8e4dc;
+    --muted: #8d8980;
+    --line: #34332f;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.day {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px 16px;
+}
+
+.day__header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.day__date {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-weight: 400;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+  min-width: 16ch;
+  text-align: center;
+}
+
+.day__date::first-letter { text-transform: uppercase; }
+
+.day__nav {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 1.1rem;
+  transition: color 0.15s, background 0.15s;
+}
+
+.day__nav:hover,
+.day__nav:focus-visible {
+  color: var(--ink);
+  background: var(--line);
+  outline: none;
+}
+
+.day__frame {
+  margin: 0;
+  line-height: 0;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 12px 40px -12px rgb(0 0 0 / 0.25);
+}
+
+.day__art canvas { display: block; }
+
+.day__art--error {
+  line-height: 1.5;
+  padding: 24px;
+  max-width: 480px;
+  color: var(--muted);
+}
+
+.day__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 32px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.legend__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.legend__item dt {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+}
+
+.legend__item dd {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.legend__value { font-variant-numeric: tabular-nums; }
+
+.legend__detail {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.legend__item--missing .legend__value {
+  color: var(--muted);
+  font-style: italic;
+  border-bottom: 1px dashed var(--muted);
+}
+
+.day__source {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
