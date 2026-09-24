@@ -8,3 +8,6 @@ android/
 ios/
 *.log
 art/exports/
+
+# Copies de travail temporaires des agents
+.claude/worktrees/
