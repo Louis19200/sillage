@@ -1,0 +1,6 @@
+# Générés par `expo prebuild` / `expo run:android` : jamais commités (Continuous Native Generation).
+android/
+ios/
+.expo/
+*.apk
+*.aab
