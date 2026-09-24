@@ -8,13 +8,15 @@
     "android": "expo run:android",
     "config": "expo config --type public",
     "typecheck": "tsc --noEmit",
-    "test": "cross-env TZ=Europe/Paris jest"
+    "test": "cross-env TZ=Europe/Paris jest",
+    "check-api": "tsx scripts/check-api.ts"
   },
   "dependencies": {
     "@sillage/shared": "workspace:*",
     "expo": "~57.0.25",
     "expo-build-properties": "~57.0.22",
     "expo-dev-client": "~57.0.19",
+    "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
     "react": "19.2.3",
@@ -27,6 +29,7 @@
     "cross-env": "^7.0.3",
     "jest": "^29.7.0",
     "jest-expo": "~57.0.5",
+    "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }
 }

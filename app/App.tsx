@@ -4,12 +4,16 @@ import { StatusBar as RNStatusBar, StyleSheet, View } from "react-native";
 
 import { DaysScreen } from "./src/screens/DaysScreen";
 import { PermissionsScreen } from "./src/screens/PermissionsScreen";
+import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { useTheme } from "./src/theme";
 
 export default function App(): ReactNode {
   const t = useTheme();
   const [granted, setGranted] = useState(false);
   const onGranted = useCallback(() => setGranted(true), []);
+  const [screen, setScreen] = useState<"days" | "settings">("days");
+  const openSettings = useCallback(() => setScreen("settings"), []);
+  const closeSettings = useCallback(() => setScreen("days"), []);
 
   return (
     <View
@@ -20,7 +24,13 @@ export default function App(): ReactNode {
       ]}
     >
       <StatusBar style="auto" />
-      {granted ? <DaysScreen /> : <PermissionsScreen onGranted={onGranted} />}
+      {!granted ? (
+        <PermissionsScreen onGranted={onGranted} />
+      ) : screen === "settings" ? (
+        <SettingsScreen onBack={closeSettings} />
+      ) : (
+        <DaysScreen onOpenSettings={openSettings} />
+      )}
     </View>
   );
 }

@@ -4,9 +4,16 @@ App Expo (Android uniquement) qui lit les **pas** et le **sommeil** dans Health 
 calcule les journées en heure locale sur le téléphone. Zone de l'agent `android-app`
 (phase 3, voir `.claude/agents/android-app.md`).
 
-État actuel : étapes 1 à 3. L'app demande l'accès à Health Connect puis affiche les
-7 dernières journées complètes, **sans aucun appel réseau**. La synchro vers l'API
-(étapes 4 et 5) et la tâche quotidienne (étape 6) viendront ensuite.
+État actuel : étapes 1 à 5. L'app demande l'accès à Health Connect, affiche les
+7 dernières journées complètes **sans aucun appel réseau**, puis, sous le tableau, envoie
+ces 7 jours (« Synchroniser ») ou 30 jours (« Backfill 30 jours ») à `POST /ingest/health`.
+La tâche quotidienne en arrière-plan (étape 6) viendra ensuite.
+
+> **Reconstruire le development build.** L'étape 4 ajoute un module natif
+> (`expo-secure-store`, et son plugin dans `app.json`). Un APK construit avant ne le contient
+> pas : l'app planterait à l'ouverture des réglages (« Cannot find native module
+> 'ExpoSecureStore' »). Refais `npx eas-cli@latest build --profile development --platform android`
+> (ou `npx expo run:android`) et réinstalle l'APK.
 
 ## Organisation
 
@@ -17,6 +24,12 @@ calcule les journées en heure locale sur le téléphone. Zone de l'agent `andro
 | `src/format.ts` | Affichage (« — » = `null`). |
 | `src/screens/PermissionsScreen.tsx` | Étape 2 : Health Connect présent ? Sinon, l'installer. Puis lecture Steps + SleepSession. |
 | `src/screens/DaysScreen.tsx` | Étape 3 : tableau date / pas / sommeil / coucher / réveil. |
+| `src/api.ts` | Étape 4 : client de `POST /ingest/health`, `fetch` injecté. Valide le corps (`HealthIngestBody`) et la réponse (`IngestResult`), gère 400, 401, autres statuts, réseau coupé, délai (20 s). Le token n'est jamais loggué ni recopié dans un message. |
+| `src/sync.ts` | Étapes 4 et 5 : `runSync("sync" \| "backfill", deps)` calcule 7 ou 30 jours, les envoie en **un seul appel** et mémorise le résultat. Tout est injecté, testé avec jest. |
+| `src/settings.ts` | Câblage réel : URL, token et dernière synchro dans `expo-secure-store`. |
+| `src/screens/SettingsScreen.tsx` | URL de l'API et `INGEST_TOKEN` (masqué, jamais réaffiché). |
+| `src/screens/SyncPanel.tsx` | Boutons « Synchroniser (7 jours) » et « Backfill 30 jours », résultat, dernière tentative et dernière réussite. |
+| `scripts/check-api.ts` | Envoie 30 journées produites par un faux Health Connect à une vraie API et les relit. |
 | `app.json` | Plugin Health Connect, `minSdkVersion` 26, permissions `READ_STEPS` et `READ_SLEEP`. |
 | `eas.json` | Profil `development` (APK avec le client de développement). |
 | `metro.config.js` | Monorepo : surveille la racine, résout les modules depuis `app/` puis la racine. |
@@ -45,6 +58,9 @@ pnpm install                        # à la racine du dépôt
 pnpm --filter @sillage/app test     # jest, avec TZ=Europe/Paris (obligatoire, vérifié au démarrage)
 pnpm --filter @sillage/app typecheck
 pnpm --filter @sillage/app config   # config Expo résolue (plugins, permissions)
+
+# Client de synchro contre une vraie API (sans téléphone), voir api/README.md pour la démarrer
+SILLAGE_API_URL=http://localhost:8787 INGEST_TOKEN=... pnpm --filter @sillage/app check-api
 ```
 
 ## Pourquoi un « development build » (et pas Expo Go)
@@ -171,6 +187,39 @@ Plus rapide une fois installé, mais demande l'outillage Android sur l'ordinateu
      coucher de lundi soir et l'heure de réveil de mardi matin ;
    - un jour avec sieste : la durée additionne sieste et nuit, les heures sont celles de la nuit.
 4. Le fuseau affiché en haut doit être le tien (`Europe/Paris`).
+
+## Synchroniser avec l'API (étapes 4 et 5)
+
+### Quelle URL saisir ?
+
+- **Production** : l'URL HTTPS de Vercel, `https://<projet>.vercel.app` (sans `/` final ;
+  l'app l'enlève de toute façon).
+- **Développement, API sur l'ordinateur** : branche le téléphone en USB, puis
+  ```bash
+  pnpm --filter @sillage/api dev      # voir api/README.md (base, INGEST_TOKEN)
+  adb reverse tcp:8787 tcp:8787       # le port 8787 du téléphone mène à l'ordinateur
+  ```
+  et saisis `http://localhost:8787`. Le HTTP en clair n'est toléré que par le development
+  build (`usesCleartextTraffic` en debug) ; un APK de production exige HTTPS.
+
+Le token est la valeur d'`INGEST_TOKEN` de l'API. Il est stocké chiffré sur le téléphone
+(`expo-secure-store`, Keystore Android, exclu des sauvegardes automatiques par le plugin),
+n'est jamais réaffiché, jamais loggué, et n'est dans aucun fichier du dépôt.
+
+### Sur le téléphone
+
+1. Reconstruis et réinstalle le development build (voir l'encadré en haut).
+2. Tableau des 7 jours → **Réglages (URL, token)** : saisis l'URL et colle le token,
+   **Enregistrer**, puis **Retour**.
+3. **Synchroniser (7 jours)** : attendu « Réussie : 7 journées enregistrées. », avec la
+   période envoyée (d'il y a 7 jours à hier). Vérifie côté API :
+   `curl <url>/range?from=<J-7>&to=<hier>` (ajouter l'en-tête `Authorization` si les
+   lectures sont protégées) : mêmes pas, même sommeil que le tableau, « — » devenu `null`.
+4. **Backfill 30 jours** : un seul appel, « 30 journées enregistrées ». Le refaire ne crée
+   pas de doublon (upsert sur `date`).
+5. Cas d'erreur à essayer : mauvais token → « Token refusé (401) » ; mode avion → « API
+   injoignable » ; URL d'un autre site → « Réponse inattendue ». La dernière tentative et la
+   dernière réussite restent affichées après avoir fermé l'app.
 
 Health Connect ne donne accès qu'aux **30 jours précédant l'octroi de la permission**.
 Au-delà, il faudrait la permission d'historique (`READ_HEALTH_DATA_HISTORY`) : inutile de

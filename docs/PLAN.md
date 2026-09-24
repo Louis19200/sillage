@@ -27,8 +27,8 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 1. [x] Projet Expo, development build, plugin Health Connect, `minSdkVersion` 26.
 2. [x] Écran de permissions (lecture `Steps` et `SleepSession`).
 3. [x] Écran des 7 derniers jours, sans réseau. *On valide la lecture des données ici.*
-4. [ ] Bouton « Synchroniser » vers l'API.
-5. [ ] Bouton de backfill sur 30 jours.
+4. [x] Bouton « Synchroniser » vers l'API.
+5. [x] Bouton de backfill sur 30 jours.
 6. [ ] Tâche quotidienne en arrière-plan (en dernier).
 
 **Piège :** journées calculées en heure locale sur le téléphone, date envoyée déjà résolue.
@@ -79,10 +79,16 @@ Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteu
 ### Phase 3
 Étapes 1 à 3 faites (branche `agent/android-app`). Validées par typecheck, jest (TZ=Europe/Paris), `expo config`, `expo prebuild` (manifeste vérifié) et `expo export` (bundle Android) ; **pas encore sur un vrai téléphone** : construire le development build (voir `app/README.md`) et comparer le tableau des 7 jours avec Health Connect avant l'étape 4.
 - Plugin : `react-native-health-connect` (v4 embarque le plugin Expo). `expo-health-connect` est déprécié et ne doit pas être installé en même temps (classe native en double).
-- Expo SDK 57 (React Native 0.86). `expo-secure-store` et `expo-background-task` ne sont pas encore installés : à ajouter aux étapes 4 et 6 (`npx expo install`), ce qui impose de reconstruire l'APK.
+- Expo SDK 57 (React Native 0.86). `expo-secure-store` est installé depuis l'étape 4 ; `expo-background-task` reste à ajouter à l'étape 6, ce qui impose de reconstruire l'APK.
 - Pour la synchro (étape 4) : `computeLastCompleteDays(healthConnectReader, n)` dans `app/src/days.ts` renvoie déjà des `HealthDay` complets, conformes à `HealthIngestBody` (vérifié par les tests).
 - Choix à connaître : `sleep_minutes` additionne les sessions (sieste + nuit) mais ne compte qu'une fois les recouvrements (même nuit enregistrée par le téléphone et la montre).
-- Restent : étapes 4, 5, 6.
+
+Étapes 4 et 5 faites. Réglages (URL + `INGEST_TOKEN` dans `expo-secure-store` ~57.0.4, plugin ajouté à `app.json`) et panneau de synchro sous le tableau : « Synchroniser (7 jours) » et « Backfill 30 jours », chacun en **un seul** `POST /ingest/health`.
+- Client dans `app/src/api.ts` (`fetch` injecté, délai 20 s, réponse validée par `IngestResult`, 400 avec les `issues` de l'API, 401, réseau, délai ; token jamais loggué, masqué même si le serveur le renvoie). Orchestration dans `app/src/sync.ts` (`runSync(kind, deps)`), testée avec jest.
+- Validé contre la vraie API locale (PGlite + `pnpm --filter @sillage/api start`) par `pnpm --filter @sillage/app check-api` : 30 jours envoyés, `{"upserted":30}`, relus identiques via `GET /day`, faux token → 401, API arrêtée → erreur réseau. **Pas encore sur le téléphone** : il faut reconstruire le development build (nouveau module natif), voir `app/README.md`.
+- Mémorisé dans SecureStore (`sillage.syncState`) : dernière tentative et dernière réussite (`SyncRecord` : instant, type, période, `upserted` ou erreur). L'étape 6 peut réutiliser `runSync` en ajoutant un type (3 jours) à `SyncKind`/`daysFor`, et le même état ; `SYNC_DAYS`/`BACKFILL_DAYS` sont dans `sync.ts`.
+- Le development build autorise le HTTP en clair (`usesCleartextTraffic` en debug) : `http://localhost:8787` via `adb reverse` fonctionne ; un APK de production exigera l'URL HTTPS de Vercel.
+- Reste : étape 6 (tâche quotidienne, `expo-background-task` ~57.0.20 selon `bundledNativeModules.json`).
 
 ### Phase 5
 Œuvre « Sillage » : un courant de lignes (les sillages) traverse le cadre, dévié par des pierres, sous un astre. Aperçus : `art/docs/previews/`. Lancer : `pnpm --filter art dev` puis `?date=YYYY-MM-DD` (flèches ← → pour naviguer).

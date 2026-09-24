@@ -1,7 +1,8 @@
 /**
  * Étape 3 : les 7 dernières journées complètes, lues dans Health Connect et calculées
  * sur le téléphone, sans aucun appel réseau. C'est ici qu'on vérifie que les chiffres
- * sont justes avant de les envoyer où que ce soit.
+ * sont justes avant de les envoyer où que ce soit. L'envoi (étapes 4 et 5) est dans
+ * SyncPanel, sous le tableau : la lecture ne dépend jamais de l'API.
  */
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -11,6 +12,7 @@ import { computeLastCompleteDays, type ComputedHealthDay } from "../days";
 import { formatClock, formatDayLabel, formatSleepMinutes, formatSteps, MISSING } from "../format";
 import { healthConnectReader, openHealthConnectSettings } from "../healthConnect";
 import { useTheme, type Theme } from "../theme";
+import { SyncPanel } from "./SyncPanel";
 
 const DAY_COUNT = 7;
 
@@ -27,7 +29,7 @@ function timeZoneName(): string {
   }
 }
 
-export function DaysScreen(): ReactNode {
+export function DaysScreen(props: { onOpenSettings: () => void }): ReactNode {
   const t = useTheme();
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -78,6 +80,8 @@ export function DaysScreen(): ReactNode {
         variant="secondary"
         onPress={() => openHealthConnectSettings()}
       />
+
+      <SyncPanel onOpenSettings={props.onOpenSettings} />
     </ScrollView>
   );
 }
