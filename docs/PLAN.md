@@ -24,9 +24,9 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 **Terminé quand :** la table contient un an de commits.
 
 ## Phase 3 : app Android (`android-app`)
-1. [ ] Projet Expo, development build, plugin Health Connect, `minSdkVersion` 26.
-2. [ ] Écran de permissions (lecture `Steps` et `SleepSession`).
-3. [ ] Écran des 7 derniers jours, sans réseau. *On valide la lecture des données ici.*
+1. [x] Projet Expo, development build, plugin Health Connect, `minSdkVersion` 26.
+2. [x] Écran de permissions (lecture `Steps` et `SleepSession`).
+3. [x] Écran des 7 derniers jours, sans réseau. *On valide la lecture des données ici.*
 4. [ ] Bouton « Synchroniser » vers l'API.
 5. [ ] Bouton de backfill sur 30 jours.
 6. [ ] Tâche quotidienne en arrière-plan (en dernier).
@@ -66,3 +66,11 @@ Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteu
 
 ## Notes de passation
 <!-- Chaque agent ajoute ici, sous le nom de sa phase, ce qui reste ouvert ou ce que la suite doit savoir. -->
+
+### Phase 3
+Étapes 1 à 3 faites (branche `agent/android-app`). Validées par typecheck, jest (TZ=Europe/Paris), `expo config`, `expo prebuild` (manifeste vérifié) et `expo export` (bundle Android) ; **pas encore sur un vrai téléphone** : construire le development build (voir `app/README.md`) et comparer le tableau des 7 jours avec Health Connect avant l'étape 4.
+- Plugin : `react-native-health-connect` (v4 embarque le plugin Expo). `expo-health-connect` est déprécié et ne doit pas être installé en même temps (classe native en double).
+- Expo SDK 57 (React Native 0.86). `expo-secure-store` et `expo-background-task` ne sont pas encore installés : à ajouter aux étapes 4 et 6 (`npx expo install`), ce qui impose de reconstruire l'APK.
+- Pour la synchro (étape 4) : `computeLastCompleteDays(healthConnectReader, n)` dans `app/src/days.ts` renvoie déjà des `HealthDay` complets, conformes à `HealthIngestBody` (vérifié par les tests).
+- Choix à connaître : `sleep_minutes` additionne les sessions (sieste + nuit) mais ne compte qu'une fois les recouvrements (même nuit enregistrée par le téléphone et la montre).
+- Restent : étapes 4, 5, 6.
