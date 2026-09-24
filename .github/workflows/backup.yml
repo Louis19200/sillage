@@ -1,0 +1,75 @@
+# Sauvegarde quotidienne de la base Neon (pg_dump chiffré, gardé 30 jours).
+#
+# Complète la restauration dans le temps de Neon, limitée à quelques heures
+# sur le plan gratuit. Procédure de restauration : docs/DEPLOY.md, « Sauvegardes ».
+#
+# Secrets du dépôt (Settings → Secrets and variables → Actions) :
+#   BACKUP_DATABASE_URL  chaîne de connexion **directe** (non poolée) de Neon
+#   BACKUP_PASSPHRASE    phrase de chiffrement (openssl rand -base64 32), à garder hors de GitHub aussi
+# Variable facultative : PG_MAJOR (défaut 17), version majeure de Postgres chez Neon.
+name: Sauvegarde de la base
+
+on:
+  schedule:
+    # Tous les jours à 03:40 UTC, après le cron github-sync de Vercel (02:xx UTC).
+    - cron: "40 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PG_MAJOR: ${{ vars.PG_MAJOR || '17' }}
+    steps:
+      - name: Vérifier les secrets
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          missing=0
+          if [ -z "$BACKUP_DATABASE_URL" ]; then echo "::error::secret BACKUP_DATABASE_URL absent (voir docs/DEPLOY.md)"; missing=1; fi
+          if [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::secret BACKUP_PASSPHRASE absent (voir docs/DEPLOY.md)"; missing=1; fi
+          exit $missing
+
+      - name: pg_dump (format custom)
+        env:
+          BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          # pg_dump doit être d'une version >= celle du serveur : image officielle.
+          docker run --rm -e BACKUP_DATABASE_URL -v "$RUNNER_TEMP:/out" "postgres:${PG_MAJOR}-alpine" \
+            sh -c 'pg_dump --format=custom --no-owner --no-acl --file=/out/sillage.dump "$BACKUP_DATABASE_URL" && pg_restore --list /out/sillage.dump > /out/sillage.toc'
+          test -s "$RUNNER_TEMP/sillage.dump"
+          grep -q "TABLE DATA public daily_metrics" "$RUNNER_TEMP/sillage.toc" || { echo "::error::daily_metrics absente du dump"; exit 1; }
+          ls -l "$RUNNER_TEMP/sillage.dump"
+
+      - name: Chiffrer (gpg, AES-256)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s' "$BACKUP_PASSPHRASE" > "$RUNNER_TEMP/passphrase"
+          name="sillage-$(date -u +%F).dump.gpg"
+          mkdir -p "$RUNNER_TEMP/upload"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-file "$RUNNER_TEMP/passphrase" \
+            --symmetric --cipher-algo AES256 --output "$RUNNER_TEMP/upload/$name" "$RUNNER_TEMP/sillage.dump"
+          rm -f "$RUNNER_TEMP/passphrase" "$RUNNER_TEMP/sillage.dump"
+          echo "BACKUP_NAME=$name" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ env.BACKUP_NAME }}
+          path: ${{ runner.temp }}/upload/${{ env.BACKUP_NAME }}
+          retention-days: 30
+          if-no-files-found: error
+          # Déjà compressé (format custom) et chiffré.
+          compression-level: 0

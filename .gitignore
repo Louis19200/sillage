@@ -11,3 +11,6 @@ art/exports/
 
 # Copies de travail temporaires des agents
 .claude/worktrees/
+
+# Sorties locales de vercel build / vercel link
+.vercel/

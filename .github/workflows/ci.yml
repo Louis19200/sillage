@@ -1,0 +1,49 @@
+# Vérifications à chaque pull request et à chaque push sur main.
+# Le déploiement lui-même est fait par Vercel (intégration Git), pas ici.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: typecheck + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      # Version de pnpm lue dans le champ "packageManager" de package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      # Un paquet à la fois : en parallèle sur les 2 cœurs du runner, un test
+      # de rendu de art/ dépasse parfois son délai de 5 s (voir docs/PLAN.md).
+      - name: Tests
+        run: pnpm -r --workspace-concurrency=1 test
+
+      # Construit la fonction Vercel de l'API comme sur Vercel (migrations sur
+      # un Postgres PGlite, bundle esbuild) et rejoue les appels curl contre le
+      # fichier produit. Aucun compte ni secret nécessaire.
+      - name: Fonction Vercel de l'API (build + essai)
+        run: pnpm --filter @sillage/api vercel:check
