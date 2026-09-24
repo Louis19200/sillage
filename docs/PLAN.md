@@ -9,10 +9,10 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 - [ ] Générer `INGEST_TOKEN` : `openssl rand -hex 32`.
 
 ## Phase 1 : backend (`api-backend`)
-- [ ] Table `daily_metrics` (migration déjà écrite) + petit exécuteur de migrations.
-- [ ] `POST /ingest/health`, `GET /day/:date`, `GET /range?from=&to=`.
-- [ ] Upsert systématique, distinction `null` / `0`.
-- [ ] Middleware d'auth par token.
+- [x] Table `daily_metrics` (migration déjà écrite) + petit exécuteur de migrations.
+- [x] `POST /ingest/health`, `GET /day/:date`, `GET /range?from=&to=`.
+- [x] Upsert systématique, distinction `null` / `0`.
+- [x] Middleware d'auth par token.
 
 **Terminé quand :** on peut insérer une journée avec curl et la relire.
 
@@ -66,6 +66,15 @@ Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteu
 
 ## Notes de passation
 <!-- Chaque agent ajoute ici, sous le nom de sa phase, ce qui reste ouvert ou ce que la suite doit savoir. -->
+
+### Phase 1
+- API livrée dans `api/` (voir `api/README.md`). `pnpm --filter api dev` démarre, la séquence curl de docs/API.md est couverte par `api/test/app.test.ts` et `api/test/postgres-driver.test.ts` (vrai driver `postgres` sur PGlite via `pglite-socket`). Pas encore rejouée contre un vrai Postgres 16 : à faire au premier `docker run`.
+- `api/src/db.ts` : `upsertHealthDays`, `upsertCommits`, `getDay`, `getRange`, `logIngest` utilisables directement (base par défaut via `DATABASE_URL`) ou via `createDb(executor)` ; `setDb(db)` pour injecter PGlite dans les tests. `api/test/helpers.ts` fournit `createTestDb()` (PGlite migré).
+- Enregistrer une tâche : une ligne en bas de `api/src/jobs.ts` ; une route : une ligne en bas de `createApp` dans `api/src/app.ts`.
+- Ajout hors fiche : variable `PROTECT_READS` (lecture protégée par le token ; défaut `true` si `NODE_ENV=production`). À reporter dans `.env.example` et à trancher en phase 4 (`deploy`).
+- `.env.example` : la valeur d'exemple d'`INGEST_TOKEN` fait 28 caractères, l'API refuse donc de démarrer tant qu'elle n'est pas remplacée (voulu).
+- Les `401` ne sont pas écrits dans `ingest_log` (seuls les appels authentifiés le sont).
+- Les timestamps sortent en UTC (`...Z`), ce que docs/API.md autorise.
 
 ### Phase 3
 Étapes 1 à 3 faites (branche `agent/android-app`). Validées par typecheck, jest (TZ=Europe/Paris), `expo config`, `expo prebuild` (manifeste vérifié) et `expo export` (bundle Android) ; **pas encore sur un vrai téléphone** : construire le development build (voir `app/README.md`) et comparer le tableau des 7 jours avec Health Connect avant l'étape 4.
