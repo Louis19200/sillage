@@ -15,6 +15,8 @@ Node 22 + Hono + Postgres (lib `postgres`). Contrat : [docs/API.md](../docs/API.
 | `CRON_SECRET` | non | secret de `GET /cron/:name` (16 caractères minimum). Absent : ces routes répondent `503` |
 | `CORS_ORIGINS` | non | origines autorisées sur `/day` et `/range`, séparées par des virgules (`https://art.example.app,http://localhost:5173`). Vide : aucun en-tête CORS |
 | `DATABASE_SERVERLESS` | non (`false`) | `true` : client `postgres` pour fonctions serverless (`max: 1`, `prepare: false`, timeouts courts), à utiliser avec le pooler Neon |
+| `GITHUB_TOKEN` | pour la source GitHub | token GitHub personnel **en lecture seule** (voir « Collecteur GitHub ») |
+| `GITHUB_LOGIN` | pour la source GitHub | identifiant GitHub dont on lit les contributions |
 
 Elles sont lues depuis l'environnement, puis depuis `api/.env` et `.env` à la racine s'ils existent (sans écraser l'environnement).
 Attention : la valeur d'exemple de `.env.example` (`change-me-long-random-string`) est trop courte, exprès.
@@ -118,6 +120,64 @@ En serverless (Vercel), node-cron ne tourne pas : les Vercel Cron Jobs appellent
 ### Routes (`src/app.ts`)
 
 Ajouter une ligne dans la section « Routes des autres zones » de `createApp`.
+
+## Collecteur GitHub (`src/collectors/github/`)
+
+Remplit la colonne `commits` de `daily_metrics` (et rien d'autre) à partir de
+`contributionsCollection.contributionCalendar` (API GraphQL de GitHub).
+
+### Créer le token (fine-grained, lecture seule)
+
+1. GitHub → *Settings* → *Developer settings* → *Personal access tokens* → *Fine-grained tokens* → *Generate new token*.
+2. *Resource owner* : ton compte ; *Expiration* : au choix (le noter, la synchro échouera en `401` à l'expiration).
+3. *Repository access* : **Public repositories (read-only)**. Aucune permission supplémentaire : la requête ne lit que le calendrier de contributions.
+   Pour que les dépôts privés comptent : cocher *Include private contributions on my profile* (*Settings* → *Public profile* → *Contributions & activity*) ;
+   si les chiffres restent en dessous du calendrier du profil, donner au token *Only select repositories* / *All repositories* avec *Contents: Read-only*.
+4. Mettre la valeur dans `GITHUB_TOKEN` (fichier `.env` à la racine, jamais dans le code) et ton identifiant dans `GITHUB_LOGIN`.
+
+Le token n'est jamais écrit dans les logs ni dans `ingest_log` (il est masqué s'il apparaît dans un message d'erreur).
+
+### Commandes
+
+```bash
+# Un an d'historique (365 derniers jours, 2 requêtes GraphQL), idempotent
+DATABASE_URL=postgres://… pnpm --filter api github:backfill
+
+# Les 7 derniers jours (même chose que la tâche nocturne), idempotent
+pnpm --filter api github:sync
+
+# Autre durée
+pnpm --filter api exec tsx scripts/backfill-github.ts --days 30
+```
+
+Pour remplir la base de production, lancer `github:backfill` en local avec `DATABASE_URL` pointant sur Neon
+(migrations déjà appliquées : `pnpm --filter api migrate`). Chaque exécution affiche un résumé JSON et écrit une ligne `source = 'github'` dans `ingest_log`.
+
+### Tâche nocturne `github-sync`
+
+Enregistrée dans `src/jobs.ts` : tous les jours à 04:15 (Europe/Paris), les 7 derniers jours, **une seule requête GraphQL**, sans état en mémoire
+(compatible fonction serverless / route cron). Elle renvoie :
+
+```json
+{ "source": "github", "from": "2026-09-17T02:15:00.000Z", "to": "2026-09-24T02:15:00.000Z",
+  "days_written": 9, "first_date": "2026-09-16", "last_date": "2026-09-24" }
+```
+
+### À savoir sur les données
+
+- **Dates** : `contributionDays.date` est calculée par GitHub dans **le fuseau du profil GitHub**. On la reprend telle quelle, sans la recalculer.
+  Si le fuseau du profil diffère de celui du téléphone, une contribution faite vers minuit peut tomber sur la journée voisine : c'est accepté.
+- **Ce que compte `commits`** : en v1, `contributionCount`, c'est-à-dire **toutes** les contributions (commits, PR, issues, revues),
+  pas seulement les commits. `0` quand GitHub dit 0 ; cette source n'écrit jamais `null`.
+- **Journées complètes** : GitHub limite une requête à un an ; les plages plus longues sont découpées. Chaque requête démarre 48 h avant
+  la plage demandée et sa première journée est écartée (ainsi que la dernière des requêtes intermédiaires, qui se recouvrent de 48 h) :
+  on n'écrit jamais une journée coupée par une borne de requête, quel que soit le fuseau du profil. Conséquence : quelques journées
+  de plus que demandé sont écrites (9 pour « 7 jours », 367 pour « 365 jours »). La journée en cours est écrite partiellement et
+  corrigée par les synchros suivantes.
+- **Tout ou rien** : toutes les requêtes sont lues avant d'écrire, puis un seul upsert en transaction. En cas d'erreur, rien n'est écrit,
+  une ligne `ok = false` avec le message est ajoutée à `ingest_log`, et l'erreur est propagée (code de sortie 1 pour les scripts).
+- **Erreurs** : `401` → token absent, expiré ou révoqué ; `403` → permissions du token, ou limite de requêtes (heure de réinitialisation
+  indiquée) ; `429` / `RATE_LIMITED` → limite de requêtes ; login inconnu → « utilisateur GitHub introuvable ».
 
 ## Tests
 

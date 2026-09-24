@@ -17,11 +17,11 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 **Terminé quand :** on peut insérer une journée avec curl et la relire.
 
 ## Phase 2 : collecteur GitHub (`github-collector`)
-- [ ] Requête GraphQL `contributionsCollection` → contributions par jour.
-- [ ] Script de backfill sur l'année écoulée.
-- [ ] Tâche nocturne qui remet à jour les 7 derniers jours.
+- [x] Requête GraphQL `contributionsCollection` → contributions par jour.
+- [x] Script de backfill sur l'année écoulée.
+- [x] Tâche nocturne qui remet à jour les 7 derniers jours.
 
-**Terminé quand :** la table contient un an de commits.
+**Terminé quand :** la table contient un an de commits. *(En attente : lancer `pnpm --filter api github:backfill` avec le vrai token, voir notes de phase 2.)*
 
 ## Phase 3 : app Android (`android-app`)
 1. [x] Projet Expo, development build, plugin Health Connect, `minSdkVersion` 26.
@@ -84,6 +84,14 @@ Préparation du déploiement Vercel + Neon (branche `agent/api-backend-vercel`),
 - **Pour `generative-art`** : `VITE_API_TOKEN` = `READ_TOKEN`, et l'origine de la page dans `CORS_ORIGINS`.
 - Une page d'art sur une URL de prévisualisation Vercel (hôte variable) ne passera pas le CORS : ajouter l'origine explicitement si besoin.
 - Pas testé contre un vrai Neon : les options serverless sont vérifiées sur l'objet client, pas sur le pooler.
+
+### Phase 2
+Collecteur livré dans `api/src/collectors/github/` (voir la section « Collecteur GitHub » d'`api/README.md`). Testé uniquement avec un `fetch` simulé (fixture `fixtures/contributions-7-days.json`, structure réelle de `contributionCalendar`) ; un appel réel avec un faux token renvoie bien le `401` attendu, journalisé dans `ingest_log`.
+- **Reste à faire (toi)** : créer le token fine-grained en lecture seule, renseigner `GITHUB_TOKEN` et `GITHUB_LOGIN`, puis `DATABASE_URL=<Neon> pnpm --filter api github:backfill`. Vérifier ensuite quelques journées contre le calendrier du profil GitHub, et cocher « Terminé quand ».
+- Tâche `github-sync` enregistrée dans `api/src/jobs.ts` (04:15 Europe/Paris, import dynamique) ; elle **renvoie** un résumé JSON `{ source, from, to, days_written, first_date, last_date }`. `runJob` actuel ignore ce retour : la route `GET /cron/:name` (api-backend) doit appeler la fonction de la tâche et renvoyer son résultat. Une seule requête GraphQL, aucun état en mémoire. Pour Vercel Cron (deploy) : les horaires sont en UTC, 04:15 Paris = `15 2 * * *` l'été, `15 3 * * *` l'hiver.
+- Variables à déclarer sur Vercel : `GITHUB_TOKEN`, `GITHUB_LOGIN` (déjà dans `.env.example`).
+- Choix à connaître : `commits` = `contributionCount` (commits + PR + issues + revues) en v1 ; dates dans le fuseau du **profil GitHub**, non recalculées. Pour ne jamais écrire une journée coupée par une borne de requête, chaque requête démarre 48 h plus tôt et sa première journée est écartée : « 7 jours » écrit 9 journées, « 365 jours » en écrit 367.
+- Hors zone (minime) : `api/test/env-jobs.test.ts` vide maintenant le registre avant chaque test (`beforeEach(clearJobs)`), car jobs.ts enregistre désormais une tâche au chargement.
 
 ### Phase 3
 Étapes 1 à 3 faites (branche `agent/android-app`). Validées par typecheck, jest (TZ=Europe/Paris), `expo config`, `expo prebuild` (manifeste vérifié) et `expo export` (bundle Android) ; **pas encore sur un vrai téléphone** : construire le development build (voir `app/README.md`) et comparer le tableau des 7 jours avec Health Connect avant l'étape 4.

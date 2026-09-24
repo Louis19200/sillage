@@ -222,6 +222,7 @@ describe("token de lecture (READ_TOKEN)", () => {
 // ---------------------------------------------------------------------------
 
 describe("GET /cron/:name", () => {
+  beforeEach(() => clearJobs());
   afterEach(() => clearJobs());
 
   const cronApp = () => makeApp({ cronSecret: CRON_SECRET });
