@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { EnvError, loadEnv } from "../src/env";
 import { clearJobs, listJobs, registerJob, runJob, startJobs, stopJobs } from "../src/jobs";
 import { bearerAuth, extractBearer, tokenMatches } from "../src/auth";
@@ -54,6 +54,8 @@ describe("auth", () => {
 });
 
 describe("jobs", () => {
+  // Le registre contient déjà les tâches enregistrées au chargement de jobs.ts (ex. github-sync).
+  beforeEach(() => clearJobs());
   afterEach(async () => {
     await stopJobs();
     clearJobs();

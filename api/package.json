@@ -9,7 +9,9 @@
     "migrate": "tsx src/migrate.ts",
     "db:pglite": "tsx scripts/pglite-server.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "github:backfill": "tsx scripts/backfill-github.ts",
+    "github:sync": "tsx scripts/backfill-github.ts --days 7"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.0",
