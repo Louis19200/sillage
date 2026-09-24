@@ -13,8 +13,21 @@ Schéma SQL : [`api/db/migrations/001_daily_metrics.sql`](../api/db/migrations/0
 
 ## Authentification
 
-Routes d'écriture : en-tête `Authorization: Bearer <INGEST_TOKEN>`. Comparaison en temps constant. `401` sinon.
-Routes de lecture : publiques en local. En production, même token ou lecture publique selon le choix fait en phase 4 (les données sont personnelles : **token par défaut**).
+En-tête `Authorization: Bearer <token>`, comparaison en temps constant, `401` sinon.
+
+| Routes | Tokens acceptés |
+|---|---|
+| Écriture (`POST /ingest/*`) | `INGEST_TOKEN` **uniquement** |
+| Lecture (`GET /day/:date`, `GET /range`) | aucun si `PROTECT_READS=false` ; sinon `READ_TOKEN` **ou** `INGEST_TOKEN` |
+| Tâches (`GET /cron/:name`) | `CRON_SECRET` uniquement |
+
+- `PROTECT_READS` : défaut `true` si `NODE_ENV=production` (les données sont personnelles), `false` en local.
+- `READ_TOKEN` (facultatif, 32 caractères minimum, différent d'`INGEST_TOKEN`) : token de **lecture seule** destiné à la page d'art, dont le bundle client est public. Il ne permet jamais d'écrire.
+
+## CORS
+
+`CORS_ORIGINS` : liste d'origines complètes séparées par des virgules (`https://sillage-art.vercel.app,http://localhost:5173`), sans joker. Vide : aucun en-tête CORS.
+S'applique **uniquement** à `GET /day/:date` et `GET /range` : `Access-Control-Allow-Origin` = l'origine si elle est dans la liste (absent sinon), méthodes `GET, OPTIONS`, en-têtes `Authorization, Content-Type`, `Max-Age` 600 s. Le preflight `OPTIONS` répond `204` sans token. Les routes d'écriture et `/cron` n'envoient jamais d'en-tête CORS.
 
 ## Endpoints
 
@@ -35,6 +48,18 @@ Réponse `200` : `DailyMetrics`. `404` si la journée n'existe pas. `400` si la 
 ### `GET /range?from=YYYY-MM-DD&to=YYYY-MM-DD`
 Bornes incluses, `from <= to`, au plus `MAX_RANGE_DAYS` jours.
 Réponse `200` : `RangeResponse` (seuls les jours présents en base, triés). Les jours absents ne sont **pas** inventés : c'est au client de les traiter comme manquants.
+
+### `GET /cron/:name` 🔒 `CRON_SECRET`
+Exécute la tâche enregistrée sous `name` dans le registre de `api/src/jobs.ts` (`registerJob`). C'est ainsi que les **Vercel Cron Jobs** déclenchent les tâches (ils envoient `Authorization: Bearer <CRON_SECRET>` d'eux-mêmes) ; node-cron (`ENABLE_JOBS`) ne sert qu'en local. L'horaire vit dans `vercel.json`, pas dans l'expression passée à `registerJob`.
+
+- `200` : `{ "job": string, "ok": true, "duration_ms": number, "result": <valeur renvoyée par la tâche, ou null> }`
+- `500` : `{ "job": string, "ok": false, "duration_ms": number, "error": string }` si la tâche lève
+- `401` secret absent ou faux (vérifié avant l'existence de la tâche) ; `404` tâche inconnue ; `503` si `CRON_SECRET` n'est pas défini.
+- Réponses en `Cache-Control: no-store`.
+
+```bash
+curl localhost:8787/cron/github-sync -H "Authorization: Bearer $CRON_SECRET"
+```
 
 ### `GET /health` (phase 7)
 `200 { "status": "ok", "db": "ok", "last_ingest": { "health": iso|null, "github": iso|null } }`, `503` si la base est injoignable.

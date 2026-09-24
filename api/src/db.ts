@@ -12,7 +12,7 @@
  */
 import postgres from "postgres";
 import { DailyMetrics, HealthDay, IsoDate } from "@sillage/shared";
-import { loadDatabaseUrl } from "./env";
+import { loadDatabaseConfig } from "./env";
 
 // ---------------------------------------------------------------------------
 // Exécuteur SQL minimal (Postgres en prod, PGlite en test)
@@ -32,6 +32,26 @@ export interface SqlExecutor {
 
 /** OID Postgres du type `date`. */
 const DATE_OID = 1082;
+
+/**
+ * Options du client en mode serverless (`DATABASE_SERVERLESS=true`, Vercel + Neon) :
+ * une seule connexion par instance, pas de requêtes préparées nommées (le pooler
+ * Neon / pgbouncer en mode transaction ne les suit pas d'une connexion à l'autre),
+ * connexions inactives fermées vite pour ne pas saturer le pooler.
+ * Durées en secondes.
+ */
+export const SERVERLESS_POSTGRES_OPTIONS = {
+  max: 1,
+  prepare: false,
+  idle_timeout: 5,
+  connect_timeout: 10,
+  max_lifetime: 60 * 5,
+} as const satisfies postgres.Options<{}>;
+
+/** Options du client selon le mode : `{}` (comportement par défaut) ou serverless. */
+export function postgresClientOptions(serverless: boolean): postgres.Options<{}> {
+  return serverless ? { ...SERVERLESS_POSTGRES_OPTIONS } : {};
+}
 
 /**
  * Client `postgres` configuré pour que le type `date` reste une chaîne
@@ -258,7 +278,10 @@ export function createDb(executor: SqlExecutor): Db {
 let defaultDb: Db | undefined;
 
 export function getDb(): Db {
-  defaultDb ??= createDb(postgresExecutor(createPostgresClient(loadDatabaseUrl())));
+  if (!defaultDb) {
+    const { url, serverless } = loadDatabaseConfig();
+    defaultDb = createDb(postgresExecutor(createPostgresClient(url, postgresClientOptions(serverless))));
+  }
   return defaultDb;
 }
 

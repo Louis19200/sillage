@@ -1,6 +1,9 @@
 /**
- * Registre minimal des tâches planifiées (node-cron).
- * Les tâches ne tournent que si `ENABLE_JOBS=true` (voir server.ts).
+ * Registre minimal des tâches planifiées.
+ *  - en local (serveur long) : node-cron, seulement si `ENABLE_JOBS=true` (voir server.ts) ;
+ *  - en serverless (Vercel) : node-cron ne tourne pas, les Vercel Cron Jobs appellent
+ *    `GET /cron/:name` (voir app.ts), qui exécute la tâche du même registre.
+ * L'expression cron enregistrée ne sert qu'à node-cron ; sur Vercel, l'horaire est dans vercel.json.
  *
  * Les autres agents enregistrent leur tâche en bas de ce fichier, une ligne
  * chacun, dans la section « Enregistrements ».
@@ -22,6 +25,27 @@ export function registerJob(name: string, cronExpr: string, fn: JobFn, options: 
 
 export function listJobs(): { name: string; cronExpr: string }[] {
   return [...registry.values()].map(({ name, cronExpr }) => ({ name, cronExpr }));
+}
+
+export function hasJob(name: string): boolean {
+  return registry.has(name);
+}
+
+export class UnknownJobError extends Error {
+  constructor(readonly jobName: string) {
+    super(`tâche inconnue : ${jobName}`);
+    this.name = "UnknownJobError";
+  }
+}
+
+/**
+ * Exécute une tâche et renvoie sa valeur ; l'erreur de la tâche est propagée.
+ * Utilisé par la route `GET /cron/:name` (Vercel Cron Jobs), qui la transforme en 500.
+ */
+export async function invokeJob(name: string): Promise<unknown> {
+  const job = registry.get(name);
+  if (!job) throw new UnknownJobError(name);
+  return await job.fn();
 }
 
 /** Exécute une tâche en capturant ses erreurs (une tâche qui plante ne tue pas le serveur). */

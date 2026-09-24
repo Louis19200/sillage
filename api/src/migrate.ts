@@ -8,8 +8,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createPostgresClient, postgresExecutor, type SqlExecutor } from "./db";
-import { loadDatabaseUrl, loadDotenvFiles } from "./env";
+import { createPostgresClient, postgresClientOptions, postgresExecutor, type SqlExecutor } from "./db";
+import { loadDatabaseConfig, loadDotenvFiles } from "./env";
 
 export const MIGRATIONS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../db/migrations");
 
@@ -46,7 +46,8 @@ export async function migrate(
 
 async function main(): Promise<void> {
   loadDotenvFiles();
-  const executor = postgresExecutor(createPostgresClient(loadDatabaseUrl(), { max: 1 }));
+  const { url, serverless } = loadDatabaseConfig();
+  const executor = postgresExecutor(createPostgresClient(url, { ...postgresClientOptions(serverless), max: 1 }));
   try {
     await migrate(executor, MIGRATIONS_DIR, (m) => console.log(m));
   } finally {
