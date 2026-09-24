@@ -35,10 +35,10 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 **Terminé quand :** la journée d'hier arrive seule en base le matin.
 
 ## Phase 4 : déploiement (`deploy`)
-- [ ] Backend + Postgres sur Fly.io ou Railway (choix documenté dans docs/DEPLOY.md).
+- [ ] Backend en fonctions Vercel + Postgres Neon, page d'art sur Vercel (procédure dans docs/DEPLOY.md).
 - [ ] HTTPS obligatoire (Android bloque le HTTP en clair).
 - [ ] Secrets en variables d'environnement, sauvegarde automatique de la base.
-- [ ] Le cron GitHub tourne sur le serveur.
+- [ ] Le cron GitHub tourne via les Vercel Cron Jobs.
 
 ## Phase 5 : art génératif v1 (`generative-art`)
 - [x] Page p5.js qui lit `/day/:date` (ou les fixtures en local).

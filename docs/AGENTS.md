@@ -55,7 +55,7 @@ Dépendances réelles :
 | `app/` | `android-app` | |
 | `art/src/engine/`, `art/src/data/`, `art/src/pages/day/` | `generative-art` | `gallery` peut **appeler** le moteur, pas le modifier |
 | `art/src/pages/gallery/`, `art/src/export/`, `art/scripts/` | `gallery` | |
-| `Dockerfile`, `fly.toml` / `railway.json`, `.github/workflows/`, `docs/DEPLOY.md` | `deploy` | `ops-reliability` ajoute ses jobs de surveillance |
+| `vercel.json`, `api/api/` (entrée Vercel), `.github/workflows/`, `docs/DEPLOY.md` | `deploy` | `ops-reliability` ajoute ses jobs de surveillance |
 
 ## Changer un contrat
 
