@@ -14,6 +14,7 @@ import { bearerAuth } from "./auth";
 import type { Db } from "./db";
 import type { Env } from "./env";
 import { hasJob, invokeJob } from "./jobs";
+import { mountOps } from "./ops";
 
 export type AppDeps = {
   db: Db;
@@ -67,6 +68,7 @@ export function createApp(deps: AppDeps): Hono {
   const { db } = deps;
   const logError = deps.logError ?? ((msg, err) => console.error(msg, err));
   const app = new Hono();
+  mountOps(app, deps); // ops-reliability : GET /health (public) + journaux JSON de /ingest/* et /cron/* ; avant les routes (ordre des middlewares)
   /** Écriture : INGEST_TOKEN uniquement. */
   const requireToken = bearerAuth(deps.ingestToken);
   /** Lecture protégée : READ_TOKEN ou INGEST_TOKEN. */

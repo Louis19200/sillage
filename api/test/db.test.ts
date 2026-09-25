@@ -25,7 +25,7 @@ describe("migrate", () => {
   it("est idempotent et trace les migrations", async () => {
     expect(await migrate(db.executor)).toEqual([]);
     const rows = await db.executor.query<{ name: string }>("SELECT name FROM schema_migrations");
-    expect(rows.map((r) => r.name)).toEqual(["001_daily_metrics.sql"]);
+    expect(rows.map((r) => r.name)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql"]);
   });
 });
 

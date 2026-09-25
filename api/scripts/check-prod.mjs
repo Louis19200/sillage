@@ -13,6 +13,9 @@
  *   CRON_SECRET    facultatif
  *   ART_URL        facultatif : adresse de la page d'art, pour vérifier le CORS
  *
+ * Vérifie aussi `GET /health` (public) et affiche l'âge de la dernière ingestion
+ * réussie de chaque source.
+ *
  * N'écrit rien en base : l'écriture est testée avec un corps volontairement
  * invalide (réponse 400 attendue), ce qui prouve que le token est accepté
  * sans toucher à tes vraies journées.
@@ -108,6 +111,36 @@ if (isLocal) {
     "HTTP redirigé vers HTTPS",
     http.status === 0 ? diagnose(http) : `statut ${http.status}`,
   );
+}
+
+// 1 bis. /health : public (sans token), état de la base et dernières ingestions (phase 7)
+{
+  const h = await call("/health");
+  let body = null;
+  try {
+    body = JSON.parse(h.body);
+  } catch {}
+  report(
+    h.status === 200 && body?.status === "ok" && body?.db === "ok",
+    "GET /health sans token → 200, base joignable",
+    h.status === 401
+      ? "/health exige un token : il doit rester public (la protection de lecture ne concerne que /day et /range)."
+      : h.status === 404 && h.type.includes("json")
+        ? "/health n'existe pas sur ce déploiement : redéploie la dernière version de l'API."
+        : h.status === 503
+          ? "l'API répond mais la base ne répond pas (Neon : console → projet → état du calcul, ou DATABASE_URL sur Vercel)."
+          : diagnose(h),
+  );
+  if (h.status === 200 && body?.last_ingest) {
+    // Seuils du contrôle check-freshness (api/src/ops/freshness.ts).
+    const limits = { health: 48, github: 72 };
+    for (const [source, iso] of Object.entries(body.last_ingest)) {
+      const hours = iso ? (Date.now() - Date.parse(iso)) / 3_600_000 : null;
+      const late = hours === null || (limits[source] !== undefined && hours > limits[source]);
+      const age = hours === null ? "jamais" : hours < 48 ? `il y a ${Math.floor(hours)} h` : `il y a ${Math.floor(hours / 24)} j`;
+      console.log(`${late ? "ATTN" : "—   "} dernière ingestion ${source} réussie : ${age}${late ? " (au-delà du seuil d'alerte)" : ""}`);
+    }
+  }
 }
 
 // 2. Lecture sans token
