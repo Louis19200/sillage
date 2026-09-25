@@ -38,12 +38,26 @@ v2 par défaut pour une première visite).
 | `select.ts` | style figé renvoyé par l'API, sinon calcul local (`selectStyles`) |
 | `input.ts` | `buildTechniqueInput(date, history, style)` : journée, centiles, graine, palette, météo / pas horaires (ou `FALLBACKS`), lune |
 | `palette.ts` | palettes v2 : saison (durée du jour), humeur (sommeil), nuance (température si connue) |
-| `techniques/` | une technique par fichier ; `index.ts` est le registre ; `placeholder.ts` le rendu provisoire |
+| `techniques/` | une technique par fichier (+ son test) ; `index.ts` est le registre ; `placeholder.ts` un rendu provisoire pour une future technique |
 | `render.ts`, `render.worker.ts` | rendu dans un pool de Workers (OffscreenCanvas), repli sur le fil principal |
 | `fiche.ts` | modèle de la fiche « Comment cette œuvre a été choisie » (la page en fait du HTML : `pages/day/fiche-view.ts`) |
 
-Portées : **Marée** (l'œuvre v1, SVG possible) et **Attracteur**. Les huit autres ont un rendu
-provisoire (cercles aux couleurs du jour, nom de la technique) en attendant leur module.
+Les 10 techniques sont portées :
+
+| Technique | Procédé | Export |
+|---|---|---|
+| Marée | œuvre v1 (bruit et champ de flux) | PNG, SVG |
+| Attracteur | chaos déterministe (Clifford) | PNG |
+| Pelage | réaction-diffusion (Gray-Scott) | PNG |
+| Corail | croissance (colonisation de l'espace) | PNG, SVG |
+| Harmonographe | courbe paramétrique amortie | PNG, SVG |
+| Vitrail | Voronoï | PNG, SVG |
+| Constructif | composition géométrique à règles | PNG, SVG |
+| Réseau | vie artificielle (physarum) | PNG |
+| Hachures | tracé de table traçante | PNG, SVG |
+| Pixels | glitch (tri de pixels) | PNG |
+
+Les plus coûteuses sont Pelage (~2–2,6 s à 1000 px, miniature ~0,1 s) et Réseau (~0,4–0,8 s, miniature ~0,08 s), mesurées dans Chromium ; toutes tournent dans le Worker de rendu. `placeholder.ts` (rendu provisoire) reste disponible pour une future technique.
 
 ```bash
 pnpm --filter @sillage/art v2:styles                 # style de chaque jour des fixtures + fréquences

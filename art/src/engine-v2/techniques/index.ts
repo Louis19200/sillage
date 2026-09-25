@@ -1,7 +1,7 @@
 /**
- * Registre des 10 techniques. Celles qui ne sont pas encore portées ont un rendu provisoire
- * en attendant leur module (voir `_template.ts`). Pour en porter une : remplacer sa ligne
- * `createPlaceholder(...)` par l'import du module.
+ * Registre des 10 techniques, toutes portées. `placeholder.ts` (rendu provisoire) reste disponible
+ * pour une future technique : l'enregistrer ici avec `createPlaceholder(...)` en attendant son module
+ * (voir `_template.ts`).
  */
 import { STYLES, type StyleId } from "@sillage/shared";
 import type { Technique } from "../types";
@@ -10,20 +10,21 @@ import { constructif } from "./constructif";
 import { corail } from "./corail";
 import { harmonographe } from "./harmonographe";
 import { maree } from "./maree";
-import { createPlaceholder } from "./placeholder";
 import { hachures } from "./hachures";
+import { pelage } from "./pelage";
 import { pixels } from "./pixels";
+import { reseau } from "./reseau";
 import { vitrail } from "./vitrail";
 
 export const TECHNIQUES: Record<StyleId, Technique> = {
   maree,
   attracteur,
-  pelage: createPlaceholder("pelage", "organique", "Pelage", "réaction-diffusion (Gray-Scott)"),
+  pelage,
   corail,
   harmonographe,
   vitrail,
   constructif,
-  reseau: createPlaceholder("reseau", "organique", "Réseau", "vie artificielle (physarum)"),
+  reseau,
   hachures,
   pixels,
 };
