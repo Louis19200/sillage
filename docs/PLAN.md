@@ -21,7 +21,7 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 - [x] Script de backfill sur l'année écoulée.
 - [x] Tâche nocturne qui remet à jour les 7 derniers jours.
 
-**Terminé quand :** la table contient un an de commits. *(En attente : lancer `pnpm --filter api github:backfill` avec le vrai token, voir notes de phase 2.)*
+**Terminé quand :** la table contient un an de commits. ✅ *Backfill du 2026-09-25 : 367 journées écrites en production (2025-09-24 → 2026-09-25).*
 
 ## Phase 3 : app Android (`android-app`)
 1. [x] Projet Expo, development build, plugin Health Connect, `minSdkVersion` 26.
