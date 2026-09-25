@@ -213,6 +213,7 @@ Vérifie : `curl -s "$API/range?from=2025-10-01&to=2026-09-30" -H "Authorization
    ```
 3. **Deploy**, puis note l'URL (`https://sillage-art.vercel.app`) et mets-la dans `CORS_ORIGINS` du projet API, puis **Redeploy** l'API.
 4. Ouvre `https://sillage-art.vercel.app/?date=2026-09-23`. Une erreur CORS dans la console du navigateur = `CORS_ORIGINS` ne correspond pas exactement à l'origine de la page.
+5. « Impossible de charger la journée : Failed to fetch » = le navigateur a été bloqué, presque toujours par le CORS. Ajoute `ART_URL=<adresse exacte de la page>` dans ton `.env` et lance `node api/scripts/check-prod.mjs` : il dit quelle valeur mettre dans `CORS_ORIGINS`. Attention, chaque déploiement Vercel a aussi sa propre adresse (`sillage-art-<hash>-….vercel.app`) : n'utilise que l'adresse de production (*Settings → Domains*), c'est elle qu'il faut autoriser.
 
 Facultatif : dans chaque projet, *Settings → Build and Deployment*, active l'option qui saute les déploiements quand ni le dossier racine ni ses dépendances n'ont changé (monorepo), pour qu'un commit dans `app/` ne reconstruise rien. À défaut, *Ignored Build Step* : `git diff --quiet HEAD^ HEAD -- . ../packages/shared ../pnpm-lock.yaml`.
 

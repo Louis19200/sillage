@@ -11,6 +11,7 @@
  *   INGEST_TOKEN   obligatoire
  *   READ_TOKEN     facultatif
  *   CRON_SECRET    facultatif
+ *   ART_URL        facultatif : adresse de la page d'art, pour vérifier le CORS
  *
  * N'écrit rien en base : l'écriture est testée avec un corps volontairement
  * invalide (réponse 400 attendue), ce qui prouve que le token est accepté
@@ -31,6 +32,7 @@ const rawUrl = process.argv[2] ?? process.env.API_URL ?? "";
 const ingestToken = process.env.INGEST_TOKEN ?? "";
 const readToken = process.env.READ_TOKEN ?? "";
 const cronSecret = process.env.CRON_SECRET ?? "";
+const artUrl = process.env.ART_URL ?? "";
 
 const isLocal = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/.test(rawUrl);
 if (!/^https:\/\//.test(rawUrl) && !isLocal) {
@@ -61,7 +63,7 @@ function report(ok, label, hint) {
   }
 }
 
-/** @typedef {{ status: number, body: string, type: string, location: string | null }} Result */
+/** @typedef {{ status: number, body: string, type: string, location: string | null, allowOrigin: string | null }} Result */
 
 /** @returns {Promise<Result>} */
 async function call(path, init = {}, base = api) {
@@ -72,9 +74,10 @@ async function call(path, init = {}, base = api) {
       body: await res.text(),
       type: res.headers.get("content-type") ?? "",
       location: res.headers.get("location"),
+      allowOrigin: res.headers.get("access-control-allow-origin"),
     };
   } catch (err) {
-    return { status: 0, body: String(err instanceof Error ? (err.cause ?? err.message) : err), type: "", location: null };
+    return { status: 0, body: String(err instanceof Error ? (err.cause ?? err.message) : err), type: "", location: null, allowOrigin: null };
   }
 }
 const bearer = (t) => ({ authorization: `Bearer ${t}` });
@@ -167,6 +170,38 @@ if (cronSecret) {
   );
 } else {
   console.log("—    CRON_SECRET absent de .env : vérification ignorée");
+}
+
+// 7. CORS : la page d'art (navigateur) a-t-elle le droit de lire l'API ?
+if (artUrl) {
+  let origin = "";
+  try {
+    origin = new URL(artUrl).origin;
+  } catch {
+    report(false, "ART_URL valide", `« ${artUrl} » n'est pas une adresse complète (ex. https://sillage-art.vercel.app).`);
+  }
+  if (origin) {
+    const pre = await call(rangePath, {
+      method: "OPTIONS",
+      headers: { origin, "access-control-request-method": "GET", "access-control-request-headers": "authorization" },
+    });
+    const allowed = pre.status < 400 && pre.allowOrigin === origin;
+    report(
+      allowed,
+      `CORS : la page ${origin} peut lire l'API`,
+      pre.status === 0
+        ? diagnose(pre)
+        : `l'API n'autorise pas cette origine (reçu : ${pre.allowOrigin ?? "aucun en-tête Access-Control-Allow-Origin"}). ` +
+            `Sur Vercel, projet API → Settings → Environment Variables : CORS_ORIGINS=${origin} ` +
+            "(exactement, sans / final ; plusieurs origines séparées par des virgules), puis Redeploy de l'API.",
+    );
+    if (allowed) {
+      const get = await call(rangePath, { headers: { origin, ...(readToken ? bearer(readToken) : bearer(ingestToken)) } });
+      report(get.status === 200 && get.allowOrigin === origin, "CORS : lecture réelle depuis la page acceptée", diagnose(get));
+    }
+  }
+} else {
+  console.log("—    ART_URL absent de .env : CORS non vérifié (mets l'adresse de la page d'art pour le tester)");
 }
 
 console.log(failures === 0 ? "\nTout est bon." : `\n${failures} vérification(s) en échec.`);
