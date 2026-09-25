@@ -49,6 +49,15 @@ Réponse `200` : `DailyMetrics`. `404` si la journée n'existe pas. `400` si la 
 Bornes incluses, `from <= to`, au plus `MAX_RANGE_DAYS` jours.
 Réponse `200` : `RangeResponse` (seuls les jours présents en base, triés). Les jours absents ne sont **pas** inventés : c'est au client de les traiter comme manquants.
 
+### Moteur v2 : `style` et `style_explain` (ajout additif)
+Pour une journée dont le style est **figé** (table `artworks`, tâche `freeze-styles`), `GET /day/:date` et chaque jour de `GET /range` portent en plus :
+- `style` : l'une des 10 techniques (`StyleIdSchema` : `maree`, `attracteur`, `pelage`, `corail`, `harmonographe`, `vitrail`, `constructif`, `reseau`, `hachures`, `pixels`) ;
+- `style_explain` : le calcul complet qui l'a choisi (`SelectionExplain` de `packages/shared/src/selection/select.ts` : valeurs brutes, K, u, centiles, tranche, ajustements, exclusions, chances, point de tirage) + `frozen_at` (ISO) et `engine_version` (`"v2"`).
+
+Les jours non figés (les 3 derniers, ou avant le premier gel) n'ont **pas** ces champs : le client calcule alors le style lui-même avec la même fonction (`computeChain` de `@sillage/shared`). Un jour figé ne change plus jamais, même si ses données changent. Si la lecture de `artworks` échoue, les routes répondent quand même, sans ces champs.
+
+La tâche `freeze-styles` (`GET /cron/freeze-styles`, 03:30 UTC) calcule la chaîne depuis le premier jour de `daily_metrics` et fige chaque jour (données ou pas) qui a au moins 3 jours (« aujourd'hui » à Paris) et ne l'est pas encore. Idempotente. Résultat : `{ today, cutoff, origin, selection_version, frozen, first, last, already_frozen }`.
+
 ### `GET /cron/:name` 🔒 `CRON_SECRET`
 Exécute la tâche enregistrée sous `name` dans le registre de `api/src/jobs.ts` (`registerJob`). C'est ainsi que les **Vercel Cron Jobs** déclenchent les tâches (ils envoient `Authorization: Bearer <CRON_SECRET>` d'eux-mêmes) ; node-cron (`ENABLE_JOBS`) ne sert qu'en local. L'horaire vit dans `vercel.json`, pas dans l'expression passée à `registerJob`.
 
