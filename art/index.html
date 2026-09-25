@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sillage</title>
     <link rel="stylesheet" href="/src/pages/day/day.css" />
+    <link rel="stylesheet" href="/src/export/export.css" />
   </head>
   <body>
     <main class="day">
@@ -17,6 +18,10 @@
         <div class="day__art" id="art"></div>
       </figure>
       <dl class="day__legend" id="legend"></dl>
+      <div class="tools">
+        <div id="export"></div>
+        <a class="tools__link" id="gallery" href="/gallery/" title="Toutes les œuvres, par mois et par année">galerie</a>
+      </div>
       <p class="day__source" id="source"></p>
     </main>
     <script type="module" src="/src/pages/day/main.ts"></script>
