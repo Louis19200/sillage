@@ -18,8 +18,28 @@ export const SYNC_DAYS = 7;
  * aller au-delà n'apporterait que des `null`, sauf avec la permission d'historique.
  */
 export const BACKFILL_DAYS = 30;
+/**
+ * Synchros automatiques (tâche de fond, ou ouverture de l'app en repli) : les 3 dernières
+ * journées complètes. Hier, plus deux jours pour rattraper un échec (réseau coupé, téléphone
+ * éteint, tâche tuée par le système) sans renvoyer toute la semaine.
+ */
+export const AUTO_DAYS = 3;
 
-export type SyncKind = "sync" | "backfill";
+/**
+ * - `sync` / `backfill` : boutons de l'écran ;
+ * - `background` : tâche quotidienne en arrière-plan ;
+ * - `open` : repli, lancé à l'ouverture de l'app quand hier n'a pas encore été envoyé.
+ */
+export type SyncKind = "sync" | "backfill" | "background" | "open";
+
+/** Dernier réveil de la tâche de fond, qu'elle ait envoyé quelque chose ou non. */
+export interface BackgroundRun {
+  /** Instant du réveil, ISO 8601 UTC (affichage seulement). */
+  at: string;
+  /** `sent` : synchro réussie ; `failed` : synchro tentée, en échec ; `skipped` : rien à faire. */
+  outcome: "sent" | "failed" | "skipped";
+  message: string;
+}
 
 /** Ce qu'on mémorise après chaque tentative (et qu'on affiche). Aucun secret ici. */
 export interface SyncRecord {
@@ -40,7 +60,11 @@ export interface SyncRecord {
 export interface SyncState {
   lastAttempt: SyncRecord | null;
   lastSuccess: SyncRecord | null;
+  /** Absent des états enregistrés avant l'étape 6 : relu comme `null`. */
+  lastBackground: BackgroundRun | null;
 }
+
+export const EMPTY_SYNC_STATE: SyncState = { lastAttempt: null, lastSuccess: null, lastBackground: null };
 
 export interface Settings {
   apiUrl: string;
@@ -79,9 +103,17 @@ export function toIngestDays(days: readonly ComputedHealthDay[]): HealthDay[] {
   return out;
 }
 
-/** Les deux types de synchro ne diffèrent que par le nombre de jours. */
+/** Les types de synchro ne diffèrent que par le nombre de jours. */
 export function daysFor(kind: SyncKind): number {
-  return kind === "backfill" ? BACKFILL_DAYS : SYNC_DAYS;
+  switch (kind) {
+    case "backfill":
+      return BACKFILL_DAYS;
+    case "background":
+    case "open":
+      return AUTO_DAYS;
+    case "sync":
+      return SYNC_DAYS;
+  }
 }
 
 /**
@@ -166,6 +198,7 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
   try {
     const previous = await deps.loadState();
     await deps.saveState({
+      ...previous,
       lastAttempt: record,
       lastSuccess: record.ok ? record : previous.lastSuccess,
     });
@@ -177,7 +210,7 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
 
 /** Relit un état mémorisé ; toute valeur illisible donne un état vide plutôt qu'une erreur. */
 export function parseSyncState(raw: string | null): SyncState {
-  const empty: SyncState = { lastAttempt: null, lastSuccess: null };
+  const empty: SyncState = { ...EMPTY_SYNC_STATE };
   if (!raw) return empty;
   try {
     const v = JSON.parse(raw) as Partial<SyncState> | null;
@@ -185,6 +218,7 @@ export function parseSyncState(raw: string | null): SyncState {
     return {
       lastAttempt: isRecord(v.lastAttempt) ? v.lastAttempt : null,
       lastSuccess: isRecord(v.lastSuccess) ? v.lastSuccess : null,
+      lastBackground: isBackgroundRun(v.lastBackground) ? v.lastBackground : null,
     };
   } catch {
     return empty;
@@ -199,5 +233,15 @@ function isRecord(v: unknown): v is SyncRecord {
     typeof (v as SyncRecord).ok === "boolean" &&
     typeof (v as SyncRecord).message === "string" &&
     Array.isArray((v as SyncRecord).details)
+  );
+}
+
+function isBackgroundRun(v: unknown): v is BackgroundRun {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as BackgroundRun).at === "string" &&
+    typeof (v as BackgroundRun).message === "string" &&
+    ["sent", "failed", "skipped"].includes((v as BackgroundRun).outcome)
   );
 }

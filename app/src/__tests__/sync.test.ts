@@ -6,7 +6,17 @@ import { HealthIngestBody } from "@sillage/shared";
 
 import type { FetchLike } from "../api";
 import { localDateOf, type HealthReader } from "../days";
-import { BACKFILL_DAYS, SYNC_DAYS, parseSyncState, runSync, toIngestDays, type SyncState } from "../sync";
+import {
+  AUTO_DAYS,
+  BACKFILL_DAYS,
+  EMPTY_SYNC_STATE,
+  SYNC_DAYS,
+  daysFor,
+  parseSyncState,
+  runSync,
+  toIngestDays,
+  type SyncState,
+} from "../sync";
 
 const TOKEN = "0123456789abcdef0123456789abcdef-secret";
 // 24 septembre 2026, 07:10 à Paris : « aujourd'hui » = 24, hier = 23.
@@ -62,7 +72,7 @@ function harness(response: { status: number; body: unknown }, initial?: SyncStat
       text: async () => JSON.stringify(response.body),
     };
   };
-  let saved: SyncState = initial ?? { lastAttempt: null, lastSuccess: null };
+  let saved: SyncState = initial ?? { ...EMPTY_SYNC_STATE };
   return {
     bodies,
     headers,
@@ -231,9 +241,53 @@ describe("runSync", () => {
 
 describe("parseSyncState", () => {
   it("valeur absente ou illisible : état vide", () => {
-    const empty = { lastAttempt: null, lastSuccess: null };
+    const empty = { lastAttempt: null, lastSuccess: null, lastBackground: null };
     expect(parseSyncState(null)).toEqual(empty);
     expect(parseSyncState("pas du json")).toEqual(empty);
     expect(parseSyncState('{"lastAttempt":{"at":1}}')).toEqual(empty);
+  });
+
+  it("état enregistré avant l'étape 6 (sans lastBackground) : relu, lastBackground à null", () => {
+    const record = {
+      kind: "sync",
+      at: "2026-09-23T05:00:00.000Z",
+      ok: true,
+      from: "2026-09-16",
+      to: "2026-09-22",
+      days: 7,
+      upserted: 7,
+      errorKind: null,
+      message: "7 journées enregistrées.",
+      details: [],
+    };
+    const parsed = parseSyncState(JSON.stringify({ lastAttempt: record, lastSuccess: record }));
+    expect(parsed.lastSuccess).toEqual(record);
+    expect(parsed.lastBackground).toBeNull();
+  });
+
+  it("relit le dernier passage en arrière-plan, ignore une valeur mal formée", () => {
+    const run = { at: "2026-09-24T04:10:00.000Z", outcome: "sent", message: "3 journées enregistrées." };
+    expect(parseSyncState(JSON.stringify({ lastBackground: run })).lastBackground).toEqual(run);
+    expect(
+      parseSyncState(JSON.stringify({ lastBackground: { ...run, outcome: "boom" } })).lastBackground
+    ).toBeNull();
+  });
+});
+
+describe("types de synchro", () => {
+  it("synchros automatiques (arrière-plan, ouverture) : 3 jours", () => {
+    expect(AUTO_DAYS).toBe(3);
+    expect(daysFor("background")).toBe(3);
+    expect(daysFor("open")).toBe(3);
+    expect(daysFor("sync")).toBe(SYNC_DAYS);
+    expect(daysFor("backfill")).toBe(BACKFILL_DAYS);
+  });
+
+  it("runSync conserve le dernier passage en arrière-plan déjà mémorisé", async () => {
+    const lastBackground = { at: "2026-09-23T04:00:00.000Z", outcome: "skipped" as const, message: "Rien à faire." };
+    const h = harness({ status: 200, body: { upserted: 1 } }, { ...EMPTY_SYNC_STATE, lastBackground });
+    await runSync("sync", h.deps);
+    expect(h.saved.lastBackground).toEqual(lastBackground);
+    expect(h.saved.lastSuccess?.ok).toBe(true);
   });
 });
