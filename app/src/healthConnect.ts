@@ -1,7 +1,7 @@
 /**
  * Seul fichier qui parle à Health Connect. Tout le calcul est dans days.ts.
  */
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
 import {
   SdkAvailabilityStatus,
   aggregateRecord,
@@ -125,3 +125,54 @@ export const healthConnectReader: HealthReader = {
     return sessions;
   },
 };
+
+/**
+ * Diagnostic lisible par l'utilisateur : ce que Health Connect renvoie vraiment à l'app,
+ * sans calcul de journées. Chaque vérification est isolée : une erreur n'empêche pas les autres.
+ * Aucune donnée n'est envoyée nulle part.
+ */
+export async function runDiagnostic(now: Date = new Date()): Promise<string[]> {
+  const lines: string[] = [];
+  const step = async (label: string, fn: () => Promise<string>) => {
+    try {
+      lines.push(`${label} : ${await fn()}`);
+    } catch (e) {
+      lines.push(`${label} : ERREUR ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  const origins = (list: readonly (string | undefined)[]) => {
+    const set = [...new Set(list.filter((x): x is string => !!x))];
+    return set.length > 0 ? set.join(", ") : "aucune";
+  };
+  const since = (days: number) => ({
+    operator: "between" as const,
+    startTime: new Date(now.getTime() - days * 86_400_000).toISOString(),
+    endTime: now.toISOString(),
+  });
+
+  lines.push(`Android ${String(Platform.Version)}`);
+  await step("Health Connect", async () => String(await getSdkStatus()) + " (3 = disponible)");
+  await step("Initialisation", async () => String(await ensureInitialized()));
+  await step("Autorisations accordées", async () => {
+    const granted = await getGrantedPermissions();
+    return granted.length === 0
+      ? "aucune"
+      : granted.map((p) => `${p.accessType}:${p.recordType}`).join(", ");
+  });
+  for (const days of [7, 30]) {
+    await step(`Pas, enregistrements sur ${days} j`, async () => {
+      const page = await readRecords("Steps", { timeRangeFilter: since(days), pageSize: 5000 });
+      const total = page.records.reduce((sum, r) => sum + r.count, 0);
+      return `${page.records.length} enregistrement(s), total ${total} pas, applis : ${origins(page.records.map((r) => r.metadata?.dataOrigin))}`;
+    });
+    await step(`Pas, agrégat sur ${days} j`, async () => {
+      const agg = await aggregateRecord({ recordType: "Steps", timeRangeFilter: since(days) });
+      return `${agg.COUNT_TOTAL} pas, applis : ${origins(agg.dataOrigins ?? [])}`;
+    });
+    await step(`Sommeil sur ${days} j`, async () => {
+      const page = await readRecords("SleepSession", { timeRangeFilter: since(days), pageSize: 1000 });
+      return `${page.records.length} session(s), applis : ${origins(page.records.map((r) => r.metadata?.dataOrigin))}`;
+    });
+  }
+  return lines;
+}

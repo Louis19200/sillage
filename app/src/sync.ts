@@ -6,7 +6,9 @@
  * teste avec jest, sans téléphone ni réseau. Le câblage réel est dans `settings.ts`.
  */
 import { ingestHealthDays, type FetchLike, type IngestErrorKind } from "./api";
-import { computeLastCompleteDays, type HealthReader, type LocalDate } from "./days";
+import type { HealthDay } from "@sillage/shared";
+
+import { computeLastCompleteDays, type ComputedHealthDay, type HealthReader, type LocalDate } from "./days";
 
 /** Bouton « Synchroniser » : les 7 dernières journées complètes (hier compris). */
 export const SYNC_DAYS = 7;
@@ -55,6 +57,28 @@ export interface SyncDeps {
   timeoutMs?: number;
 }
 
+/**
+ * Ce qu'on envoie vraiment. Une valeur absente de Health Connect n'est pas envoyée
+ * (champ omis = colonne intacte côté API) : une lecture vide (autorisation retirée,
+ * appli source déconnectée) ne peut donc jamais effacer des valeurs déjà en base.
+ * Une journée sans aucune valeur n'est pas envoyée du tout ; pour l'art, une ligne
+ * absente et une ligne à `null` se lisent de la même façon.
+ */
+export function toIngestDays(days: readonly ComputedHealthDay[]): HealthDay[] {
+  const out: HealthDay[] = [];
+  for (const day of days) {
+    const kept: HealthDay = { date: day.date };
+    if (day.steps !== null) kept.steps = day.steps;
+    if (day.sleep_minutes !== null) {
+      kept.sleep_minutes = day.sleep_minutes;
+      kept.sleep_start = day.sleep_start;
+      kept.sleep_end = day.sleep_end;
+    }
+    if (Object.keys(kept).length > 1) out.push(kept);
+  }
+  return out;
+}
+
 /** Les deux types de synchro ne diffèrent que par le nombre de jours. */
 export function daysFor(kind: SyncKind): number {
   return kind === "backfill" ? BACKFILL_DAYS : SYNC_DAYS;
@@ -71,40 +95,60 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
 
   let record: SyncRecord;
   try {
-    const days = await computeLastCompleteDays(deps.reader, count, now);
-    const from = days[0]?.date ?? null;
-    const to = days[days.length - 1]?.date ?? null;
-    const settings = await deps.loadSettings();
-    const outcome = await ingestHealthDays({
-      baseUrl: settings.apiUrl,
-      token: settings.token,
-      days,
-      fetch: deps.fetch,
-      ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
-    });
-    record = outcome.ok
-      ? {
-          ...base,
-          ok: true,
-          from,
-          to,
-          days: days.length,
-          upserted: outcome.upserted,
-          errorKind: null,
-          message: `${outcome.upserted} journée${outcome.upserted > 1 ? "s" : ""} enregistrée${outcome.upserted > 1 ? "s" : ""}.`,
-          details: [],
-        }
-      : {
-          ...base,
-          ok: false,
-          from,
-          to,
-          days: days.length,
-          upserted: null,
-          errorKind: outcome.kind,
-          message: outcome.message,
-          details: outcome.details,
-        };
+    const computed = await computeLastCompleteDays(deps.reader, count, now);
+    const from = computed[0]?.date ?? null;
+    const to = computed[computed.length - 1]?.date ?? null;
+    const days = toIngestDays(computed);
+    const empty = computed.length - days.length;
+
+    if (days.length === 0) {
+      record = {
+        ...base,
+        ok: false,
+        from,
+        to,
+        days: 0,
+        upserted: null,
+        errorKind: "read",
+        message:
+          `Health Connect n'a renvoyé aucune donnée (pas ni sommeil) pour ces ${computed.length} jours : rien n'a été envoyé. ` +
+          "Vérifie qu'une appli (Samsung Health, Google Fit, ta montre…) écrit bien dans Health Connect : bouton « Diagnostic Health Connect ».",
+        details: [],
+      };
+    } else {
+      const settings = await deps.loadSettings();
+      const outcome = await ingestHealthDays({
+        baseUrl: settings.apiUrl,
+        token: settings.token,
+        days,
+        fetch: deps.fetch,
+        ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
+      });
+      const skipped = empty > 0 ? ` ${empty} journée${empty > 1 ? "s" : ""} sans données, non envoyée${empty > 1 ? "s" : ""}.` : "";
+      record = outcome.ok
+        ? {
+            ...base,
+            ok: true,
+            from,
+            to,
+            days: days.length,
+            upserted: outcome.upserted,
+            errorKind: null,
+            message: `${outcome.upserted} journée${outcome.upserted > 1 ? "s" : ""} enregistrée${outcome.upserted > 1 ? "s" : ""}.${skipped}`,
+            details: [],
+          }
+        : {
+            ...base,
+            ok: false,
+            from,
+            to,
+            days: days.length,
+            upserted: null,
+            errorKind: outcome.kind,
+            message: outcome.message,
+            details: outcome.details,
+          };
+    }
   } catch (e) {
     record = {
       ...base,

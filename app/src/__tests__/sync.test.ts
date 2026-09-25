@@ -6,7 +6,7 @@ import { HealthIngestBody } from "@sillage/shared";
 
 import type { FetchLike } from "../api";
 import { localDateOf, type HealthReader } from "../days";
-import { BACKFILL_DAYS, SYNC_DAYS, parseSyncState, runSync, type SyncState } from "../sync";
+import { BACKFILL_DAYS, SYNC_DAYS, parseSyncState, runSync, toIngestDays, type SyncState } from "../sync";
 
 const TOKEN = "0123456789abcdef0123456789abcdef-secret";
 // 24 septembre 2026, 07:10 à Paris : « aujourd'hui » = 24, hier = 23.
@@ -24,7 +24,33 @@ const reader: HealthReader = {
   },
 };
 
-function harness(response: { status: number; body: unknown }, initial?: SyncState) {
+/** Des pas et une nuit tous les jours. */
+const everyDayReader: HealthReader = {
+  async aggregateSteps(start) {
+    return { total: 5000 + start.getDate(), dataOrigins: ["com.sec.android.app.shealth"] };
+  },
+  async readSleepSessions(start, end) {
+    const out = [];
+    for (let d = new Date(start); d < end; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+      const wake = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 7, 0);
+      const bed = new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, 23, 30);
+      out.push({ startTime: bed.toISOString(), endTime: wake.toISOString() });
+    }
+    return out;
+  },
+};
+
+/** Health Connect qui ne renvoie rien (aucune appli source, par exemple). */
+const emptyReader: HealthReader = {
+  async aggregateSteps() {
+    return { total: 0, dataOrigins: [] };
+  },
+  async readSleepSessions() {
+    return [];
+  },
+};
+
+function harness(response: { status: number; body: unknown }, initial?: SyncState, r: HealthReader = reader) {
   const bodies: unknown[] = [];
   const headers: Record<string, string>[] = [];
   const fetch: FetchLike = async (_url, init) => {
@@ -44,7 +70,7 @@ function harness(response: { status: number; body: unknown }, initial?: SyncStat
       return saved;
     },
     deps: {
-      reader,
+      reader: r,
       fetch,
       now: () => NOW,
       loadSettings: async () => ({ apiUrl: "http://localhost:8787", token: TOKEN }),
@@ -60,9 +86,36 @@ function datesOf(body: unknown): string[] {
   return (body as { days: { date: string }[] }).days.map((d) => d.date);
 }
 
+describe("toIngestDays", () => {
+  const empty = { steps: null, sleep_minutes: null, sleep_start: null, sleep_end: null };
+  it("garde 0 (vraie valeur), omet null (absence), retire les journées vides", () => {
+    expect(
+      toIngestDays([
+        { date: "2026-09-20", ...empty },
+        { date: "2026-09-21", ...empty, steps: 0 },
+        {
+          date: "2026-09-22",
+          steps: null,
+          sleep_minutes: 400,
+          sleep_start: "2026-09-21T23:00:00+02:00",
+          sleep_end: "2026-09-22T05:40:00+02:00",
+        },
+      ]),
+    ).toEqual([
+      { date: "2026-09-21", steps: 0 },
+      {
+        date: "2026-09-22",
+        sleep_minutes: 400,
+        sleep_start: "2026-09-21T23:00:00+02:00",
+        sleep_end: "2026-09-22T05:40:00+02:00",
+      },
+    ]);
+  });
+});
+
 describe("runSync", () => {
   it("Synchroniser : un appel, les 7 derniers jours complets, aujourd'hui exclu", async () => {
-    const h = harness({ status: 200, body: { upserted: SYNC_DAYS } });
+    const h = harness({ status: 200, body: { upserted: SYNC_DAYS } }, undefined, everyDayReader);
     const record = await runSync("sync", h.deps);
 
     expect(h.bodies).toHaveLength(1);
@@ -78,22 +131,6 @@ describe("runSync", () => {
       "2026-09-23",
     ]);
     expect(h.headers[0]?.Authorization).toBe(`Bearer ${TOKEN}`);
-    expect((body as { days: unknown[] }).days[6]).toEqual({
-      date: "2026-09-23",
-      steps: 8421,
-      sleep_minutes: 412,
-      sleep_start: "2026-09-22T23:48:00+02:00",
-      sleep_end: "2026-09-23T06:40:00+02:00",
-    });
-    // Jour sans source : null explicite, jamais 0 ni omis.
-    expect((body as { days: unknown[] }).days[0]).toEqual({
-      date: "2026-09-17",
-      steps: null,
-      sleep_minutes: null,
-      sleep_start: null,
-      sleep_end: null,
-    });
-
     expect(record).toMatchObject({
       kind: "sync",
       ok: true,
@@ -107,8 +144,36 @@ describe("runSync", () => {
     expect(h.saved.lastSuccess).toEqual(record);
   });
 
+  it("jours sans données : non envoyés, jamais de null qui effacerait une valeur en base", async () => {
+    const h = harness({ status: 200, body: { upserted: 1 } });
+    const record = await runSync("sync", h.deps);
+
+    expect(h.bodies).toHaveLength(1);
+    expect((h.bodies[0] as { days: unknown[] }).days).toEqual([
+      {
+        date: "2026-09-23",
+        steps: 8421,
+        sleep_minutes: 412,
+        sleep_start: "2026-09-22T23:48:00+02:00",
+        sleep_end: "2026-09-23T06:40:00+02:00",
+      },
+    ]);
+    expect(record).toMatchObject({ ok: true, from: "2026-09-17", to: "2026-09-23", days: 1, upserted: 1 });
+    expect(record.message).toContain("6 journées sans données, non envoyées");
+  });
+
+  it("Health Connect ne renvoie rien : aucun appel à l'API, échec explicite", async () => {
+    const h = harness({ status: 200, body: { upserted: 30 } }, undefined, emptyReader);
+    const record = await runSync("backfill", h.deps);
+
+    expect(h.bodies).toHaveLength(0);
+    expect(record).toMatchObject({ ok: false, errorKind: "read", days: 0, upserted: null });
+    expect(record.message).toContain("aucune donnée");
+    expect(h.saved.lastSuccess).toBeNull();
+  });
+
   it("Backfill : un seul appel avec 30 journées consécutives jusqu'à hier", async () => {
-    const h = harness({ status: 200, body: { upserted: BACKFILL_DAYS } });
+    const h = harness({ status: 200, body: { upserted: BACKFILL_DAYS } }, undefined, everyDayReader);
     const record = await runSync("backfill", h.deps);
 
     expect(BACKFILL_DAYS).toBe(30);

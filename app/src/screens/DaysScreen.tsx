@@ -10,7 +10,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-nat
 import { Button } from "../components";
 import { computeLastCompleteDays, type ComputedHealthDay } from "../days";
 import { formatClock, formatDayLabel, formatSleepMinutes, formatSteps, MISSING } from "../format";
-import { healthConnectReader, openHealthConnectSettings } from "../healthConnect";
+import { healthConnectReader, openHealthConnectSettings, runDiagnostic } from "../healthConnect";
 import { useTheme, type Theme } from "../theme";
 import { SyncPanel } from "./SyncPanel";
 
@@ -81,8 +81,44 @@ export function DaysScreen(props: { onOpenSettings: () => void }): ReactNode {
         onPress={() => openHealthConnectSettings()}
       />
 
+      <DiagnosticPanel t={t} />
+
       <SyncPanel onOpenSettings={props.onOpenSettings} />
     </ScrollView>
+  );
+}
+
+/** Ce que Health Connect renvoie vraiment : pour comprendre un tableau vide. */
+function DiagnosticPanel(props: { t: Theme }): ReactNode {
+  const { t } = props;
+  const [lines, setLines] = useState<string[] | null>(null);
+  const [running, setRunning] = useState(false);
+  const run = useCallback(async () => {
+    setRunning(true);
+    try {
+      setLines(await runDiagnostic());
+    } finally {
+      setRunning(false);
+    }
+  }, []);
+  return (
+    <View>
+      <Button
+        label={running ? "Diagnostic en cours…" : "Diagnostic Health Connect"}
+        variant="secondary"
+        onPress={() => void run()}
+        disabled={running}
+      />
+      {lines && (
+        <View style={[styles.table, { backgroundColor: t.surface, borderColor: t.border, padding: 12 }]}>
+          {lines.map((line, i) => (
+            <Text key={i} selectable style={{ color: t.text, marginBottom: 4 }}>
+              {line}
+            </Text>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
