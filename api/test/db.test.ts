@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DailyMetrics } from "@sillage/shared";
 import { buildHealthUpsert, buildHealthUpsertBatch, type Db } from "../src/db";
-import { migrate } from "../src/migrate";
+import { readdirSync } from "node:fs";
+import { MIGRATIONS_DIR, migrate } from "../src/migrate";
 import { createTestDb, resetTestDb } from "./helpers";
 
 let db: Db;
@@ -25,7 +26,10 @@ describe("migrate", () => {
   it("est idempotent et trace les migrations", async () => {
     expect(await migrate(db.executor)).toEqual([]);
     const rows = await db.executor.query<{ name: string }>("SELECT name FROM schema_migrations");
-    expect(rows.map((r) => r.name)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql"]);
+    // Toutes les migrations du dossier, dans l'ordre (chaque zone ajoute la sienne : 001 à 004…).
+    const all = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+    expect(all).toEqual(expect.arrayContaining(["001_daily_metrics.sql", "002_ops_alert_state.sql", "003_artworks.sql", "004_weather_location.sql"]));
+    expect(rows.map((r) => r.name).sort()).toEqual(all);
   });
 });
 

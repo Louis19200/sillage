@@ -10,7 +10,7 @@
  *    Par tranches de ~12 ms entre lesquelles le navigateur peint et répond : l'onglet ne gèle pas.
  */
 import type { DayInput } from "../../engine";
-import { drawSceneToContext } from "../../engine/render-p5";
+import { drawSceneToContext } from "../../engine/render-canvas";
 import type { Scene } from "../../engine/scene";
 import type { ThumbCache } from "./cache";
 import type { FromWorker, ToWorker } from "./worker-protocol";

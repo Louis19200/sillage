@@ -4,6 +4,9 @@
  * (section « Changer un contrat ») avant d'y toucher.
  */
 import { z } from "zod";
+import { STYLES } from "./selection";
+
+export * from "./selection";
 
 /** Date calendaire locale, déjà résolue côté téléphone : "2026-09-24". */
 export const IsoDate = z
@@ -24,6 +27,24 @@ export const OffsetDateTime = z.string().datetime({ offset: true });
  */
 const nullableCount = z.number().int().nonnegative().nullable();
 
+/** Identifiant d'une des 10 techniques du moteur v2 (voir `selection/constants.ts`). */
+export const StyleIdSchema = z.enum(STYLES);
+
+/**
+ * Explication du choix d'un style figé (moteur v2) : `SelectionExplain` (selection/select.ts)
+ * + la date du gel et la version du moteur. Validée en surface : le détail suit
+ * `selection_version`, et un client ancien doit pouvoir lire une version plus récente.
+ */
+export const StyleExplain = z
+  .object({
+    selection_version: z.number().int().positive(),
+    style: StyleIdSchema,
+    frozen_at: z.string().datetime({ offset: true }).optional(),
+    engine_version: z.string().optional(),
+  })
+  .passthrough();
+export type StyleExplain = z.infer<typeof StyleExplain>;
+
 /** Une journée agrégée, telle que stockée dans `daily_metrics`. */
 export const DailyMetrics = z.object({
   date: IsoDate,
@@ -33,6 +54,10 @@ export const DailyMetrics = z.object({
   sleep_end: OffsetDateTime.nullable(),
   commits: nullableCount,
   updated_at: z.string().datetime({ offset: true }),
+  /** Moteur v2 : style figé de la journée (absent tant qu'elle n'est pas figée). */
+  style: StyleIdSchema.optional(),
+  /** Moteur v2 : comment ce style a été choisi (présent avec `style`). */
+  style_explain: StyleExplain.optional(),
 });
 export type DailyMetrics = z.infer<typeof DailyMetrics>;
 
@@ -72,3 +97,23 @@ export const AUTH_HEADER = "authorization"; // valeur : `Bearer <INGEST_TOKEN>`
 
 /** Limite de `GET /range`, pour éviter les requêtes démesurées. */
 export const MAX_RANGE_DAYS = 800;
+
+// --- Phase 8 : contexte de la journée (météo, position, Kp, lune) ------------
+// Additif : voir packages/shared/src/context.ts et docs/API.md.
+export * from "./context";
+import { DayContext } from "./context";
+
+/**
+ * Journée renvoyée par `GET /day/:date` et `GET /range` : `DailyMetrics` plus
+ * `context` (objet, ou `null` si aucun contexte n'est encore stocké pour ce jour).
+ * Champ optionnel : un client qui l'ignore continue de fonctionner.
+ */
+export const DailyMetricsWithContext = DailyMetrics.extend({
+  context: DayContext.nullable().optional(),
+});
+export type DailyMetricsWithContext = z.infer<typeof DailyMetricsWithContext>;
+
+export const RangeWithContextResponse = RangeResponse.extend({
+  days: z.array(DailyMetricsWithContext),
+});
+export type RangeWithContextResponse = z.infer<typeof RangeWithContextResponse>;

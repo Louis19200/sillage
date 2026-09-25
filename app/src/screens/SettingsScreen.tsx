@@ -3,10 +3,27 @@
  * expo-secure-store. Le token enregistré n'est jamais réaffiché.
  */
 import { useEffect, useState, type ReactNode } from "react";
-import { ActivityIndicator, BackHandler, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActivityIndicator,
+  BackHandler,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { isInsecureRemoteUrl, normalizeBaseUrl } from "../api";
 import { Button } from "../components";
+import { captureDailyPosition, disabledStore, type LocationStore } from "../location";
+import {
+  realLocationDeps,
+  requestLocationPermission,
+  safeLoadLocationStore,
+  saveLocationStore,
+} from "../locationDevice";
 import { deleteToken, loadSettings, saveApiUrl, saveToken } from "../settings";
 import { useTheme } from "../theme";
 
@@ -140,6 +157,8 @@ export function SettingsScreen(props: { onBack: () => void }): ReactNode {
           {hasToken && (
             <Button label="Effacer le token" variant="secondary" onPress={() => void forgetToken()} />
           )}
+
+          <LocationSetting />
         </View>
       )}
 
@@ -148,7 +167,108 @@ export function SettingsScreen(props: { onBack: () => void }): ReactNode {
   );
 }
 
+/**
+ * Option « Envoyer ma position approximative (pour la météo) », désactivée par défaut.
+ * L'activer demande la permission de localisation approximative ; la désactiver efface
+ * toutes les positions encore sur le téléphone.
+ */
+function LocationSetting(): ReactNode {
+  const t = useTheme();
+  const [store, setStore] = useState<LocationStore | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState(false);
+  const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null);
+
+  useEffect(() => {
+    void safeLoadLocationStore().then(setStore);
+  }, []);
+
+  async function toggle(on: boolean): Promise<void> {
+    if (!store || busy) return;
+    setBusy(true);
+    setMessage(null);
+    try {
+      if (!on) {
+        const next = disabledStore();
+        await saveLocationStore(next);
+        setStore(next);
+        setBlocked(false);
+        setMessage({ text: "Option désactivée : positions effacées de ce téléphone.", error: false });
+        return;
+      }
+      const permission = await requestLocationPermission();
+      if (permission !== "granted") {
+        setBlocked(permission === "blocked");
+        setMessage({
+          text:
+            permission === "blocked"
+              ? "Permission refusée définitivement : autorise « Position » (approximative) dans les réglages Android de Sillage."
+              : "Permission refusée : l'option reste désactivée.",
+          error: true,
+        });
+        return;
+      }
+      const next: LocationStore = { ...store, enabled: true };
+      await saveLocationStore(next);
+      setStore(next);
+      const capture = await captureDailyPosition(realLocationDeps, "current", new Date());
+      if (capture.store) setStore(capture.store);
+      setMessage({
+        text:
+          capture.outcome === "captured"
+            ? `Option activée. Position du ${capture.date ?? "jour"} mémorisée (arrondie), envoyée une fois la journée finie.`
+            : `Option activée. ${capture.message}`,
+        error: false,
+      });
+    } catch (e) {
+      setMessage({ text: `Réglage impossible : ${e instanceof Error ? e.message : String(e)}`, error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.switchRow}>
+        <Text style={[styles.label, styles.switchLabel, { color: t.text }]}>
+          Envoyer ma position approximative (pour la météo)
+        </Text>
+        {store ? (
+          <Switch
+            value={store.enabled}
+            onValueChange={(v) => void toggle(v)}
+            disabled={busy}
+            trackColor={{ true: t.accent, false: t.border }}
+            accessibilityLabel="Envoyer ma position approximative (pour la météo)"
+          />
+        ) : (
+          <ActivityIndicator color={t.accent} />
+        )}
+      </View>
+      <Text style={[styles.help, { color: t.muted }]}>
+        Ta position est arrondie sur le téléphone à ~1 km (2 décimales) avant d'être mémorisée ou
+        envoyée, une seule par jour (jamais de trajet), et effacée du téléphone une fois envoyée.
+      </Text>
+      {store?.enabled && (
+        <Text style={[styles.help, { color: t.muted }]}>
+          Dernière position mémorisée : {store.lastCaptured ?? "aucune"} ; en attente d'envoi :{" "}
+          {store.pending.length} jour{store.pending.length > 1 ? "s" : ""}.
+        </Text>
+      )}
+      {message && (
+        <Text style={[styles.message, { color: message.error ? t.danger : t.accent }]}>{message.text}</Text>
+      )}
+      {blocked && (
+        <Button label="Ouvrir les réglages de Sillage" variant="secondary" onPress={() => void Linking.openSettings()} />
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  section: { marginTop: 28 },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  switchLabel: { flex: 1 },
   container: { padding: 16, paddingTop: 24 },
   title: { fontSize: 24, fontWeight: "700", marginBottom: 8 },
   spinner: { marginVertical: 32 },

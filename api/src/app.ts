@@ -9,12 +9,14 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import type { ZodError } from "zod";
-import { HealthIngestBody, IsoDate, MAX_RANGE_DAYS, type IngestResult, type RangeResponse } from "@sillage/shared";
+import { HealthIngestBody, IsoDate, MAX_RANGE_DAYS, type DailyMetrics, type IngestResult, type RangeResponse } from "@sillage/shared";
+import { attachStyles } from "./artworks";
 import { bearerAuth } from "./auth";
 import type { Db } from "./db";
 import type { Env } from "./env";
 import { hasJob, invokeJob } from "./jobs";
 import { mountOps } from "./ops";
+import { mountContext } from "./context";
 
 export type AppDeps = {
   db: Db;
@@ -69,6 +71,7 @@ export function createApp(deps: AppDeps): Hono {
   const logError = deps.logError ?? ((msg, err) => console.error(msg, err));
   const app = new Hono();
   mountOps(app, deps); // ops-reliability : GET /health (public) + journaux JSON de /ingest/* et /cron/* ; avant les routes (ordre des middlewares)
+  mountContext(app, deps); // extensions (phase 8) : POST /ingest/location + `context` dans /day et /range ; après mountOps, avant les routes de lecture
   /** Écriture : INGEST_TOKEN uniquement. */
   const requireToken = bearerAuth(deps.ingestToken);
   /** Lecture protégée : READ_TOKEN ou INGEST_TOKEN. */
@@ -157,6 +160,16 @@ export function createApp(deps: AppDeps): Hono {
     app.use("/range", readCors);
   }
 
+  /** Moteur v2 : `style`/`style_explain` des jours figés ; une panne de `artworks` ne casse jamais la lecture. */
+  async function withStyles(days: DailyMetrics[]): Promise<DailyMetrics[]> {
+    try {
+      return await attachStyles(db.executor, days);
+    } catch (err) {
+      logError("artworks : lecture des styles figés impossible", err);
+      return days;
+    }
+  }
+
   const read = new Hono();
   // Seulement sur les routes de lecture : un `*` monté à la racine s'appliquerait
   // aussi à /cron/:name et aux routes des autres zones (ex. /health).
@@ -170,7 +183,8 @@ export function createApp(deps: AppDeps): Hono {
     if (!date.success) return badRequest(c, "date invalide", formatIssues(date.error));
     const day = await db.getDay(date.data);
     if (!day) return c.json({ error: "not_found", message: `aucune donnée pour ${date.data}` }, 404);
-    return c.json(day, 200);
+    const [styled] = await withStyles([day]); // moteur v2 : style figé (additif)
+    return c.json(styled ?? day, 200);
   });
 
   read.get("/range", async (c) => {
@@ -185,7 +199,7 @@ export function createApp(deps: AppDeps): Hono {
     const span = inclusiveDayCount(from.data, to.data);
     if (span > MAX_RANGE_DAYS) return badRequest(c, `plage trop longue : ${span} jours (maximum ${MAX_RANGE_DAYS})`);
 
-    const days = await db.getRange(from.data, to.data);
+    const days = await withStyles(await db.getRange(from.data, to.data)); // moteur v2 : style figé (additif)
     return c.json({ from: from.data, to: to.data, days } satisfies RangeResponse, 200);
   });
 

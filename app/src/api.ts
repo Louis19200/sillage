@@ -1,5 +1,5 @@
 /**
- * Client HTTP de `POST /ingest/health` (voir docs/API.md).
+ * Client HTTP de `POST /ingest/health` (voir docs/API.md) et de `POST /ingest/location`.
  *
  * Module pur : `fetch` est injecté, ce qui permet de le tester avec jest sans réseau.
  * Le token n'apparaît que dans l'en-tête `Authorization` : il n'est jamais loggué ni
@@ -126,6 +126,75 @@ function snippet(text: string): string {
  * dans un `IngestOutcome` affichable tel quel.
  */
 export async function ingestHealthDays(req: IngestRequest): Promise<IngestOutcome> {
+  return postIngest(req, "/ingest/health", () => {
+    const body = HealthIngestBody.safeParse({ days: req.days });
+    return body.success
+      ? { ok: true, data: body.data }
+      : {
+          ok: false,
+          details: body.error.issues.map((i) => `${i.path.join(".") || "(racine)"} : ${i.message}`),
+        };
+  });
+}
+
+/**
+ * Une position par journée locale, déjà arrondie (voir location.ts). Contrat de
+ * `POST /ingest/location` : `{ days: [{ date, lat, lon }] }`, réponse `{ upserted }`.
+ */
+export interface LocationIngestDay {
+  date: string;
+  lat: number;
+  lon: number;
+}
+
+export interface LocationIngestRequest extends Omit<IngestRequest, "days"> {
+  days: readonly LocationIngestDay[];
+}
+
+/** Même borne que l'ingestion santé. */
+const MAX_INGEST_DAYS = 400;
+
+/**
+ * Validation locale du corps (pas encore de schéma partagé pour cette route côté app).
+ * Les messages ne recopient jamais la valeur fautive : aucune coordonnée à l'écran.
+ */
+export function checkLocationDays(days: readonly LocationIngestDay[]): string[] {
+  const issues: string[] = [];
+  if (days.length === 0) issues.push("days : au moins une journée");
+  if (days.length > MAX_INGEST_DAYS) issues.push(`days : au plus ${MAX_INGEST_DAYS} journées`);
+  const seen = new Set<string>();
+  days.forEach((d, i) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.date)) issues.push(`days.${i}.date : YYYY-MM-DD attendu`);
+    else if (seen.has(d.date)) issues.push(`days.${i}.date : date en double`);
+    seen.add(d.date);
+    if (!Number.isFinite(d.lat) || d.lat < -90 || d.lat > 90) issues.push(`days.${i}.lat : hors de [-90, 90]`);
+    if (!Number.isFinite(d.lon) || d.lon < -180 || d.lon > 180) issues.push(`days.${i}.lon : hors de [-180, 180]`);
+  });
+  return issues;
+}
+
+/**
+ * Envoie les positions quotidiennes en un seul appel à `POST /ingest/location`. Ne lève
+ * jamais. Un 404 (route pas encore déployée) revient comme une erreur `http` avec
+ * `status: 404` : c'est à l'appelant d'en faire « pas encore disponible ».
+ */
+export async function ingestLocationDays(req: LocationIngestRequest): Promise<IngestOutcome> {
+  return postIngest(req, "/ingest/location", () => {
+    const issues = checkLocationDays(req.days);
+    return issues.length === 0
+      ? { ok: true, data: { days: req.days.map((d) => ({ date: d.date, lat: d.lat, lon: d.lon })) } }
+      : { ok: false, details: issues };
+  });
+}
+
+type BodyCheck = { ok: true; data: unknown } | { ok: false; details: string[] };
+
+/** POST authentifié d'un corps d'ingestion ; réponse attendue : `IngestResult`. */
+async function postIngest(
+  req: { baseUrl: string; token: string; fetch: FetchLike; timeoutMs?: number },
+  path: string,
+  buildBody: () => BodyCheck
+): Promise<IngestOutcome> {
   const token = req.token.trim();
   const baseUrl = normalizeBaseUrl(req.baseUrl);
   if (!baseUrl) {
@@ -135,10 +204,10 @@ export async function ingestHealthDays(req: IngestRequest): Promise<IngestOutcom
     return fail("config", "Token manquant : renseigne INGEST_TOKEN dans les réglages.", token);
   }
 
-  const body = HealthIngestBody.safeParse({ days: req.days });
-  if (!body.success) {
+  const body = buildBody();
+  if (!body.ok) {
     return fail("invalid-body", "Les journées calculées sont invalides, rien n'a été envoyé.", token, {
-      details: body.error.issues.map((i) => `${i.path.join(".") || "(racine)"} : ${i.message}`),
+      details: body.details,
     });
   }
 
@@ -154,7 +223,7 @@ export async function ingestHealthDays(req: IngestRequest): Promise<IngestOutcom
   let ok: boolean;
   let text: string;
   try {
-    const res = await req.fetch(`${baseUrl}/ingest/health`, {
+    const res = await req.fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,

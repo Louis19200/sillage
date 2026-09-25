@@ -18,11 +18,70 @@ Source des données (voir `.env.example`) : `VITE_DATA_SOURCE=fixtures` (défaut
 | `mapping.ts` | **le** fichier à retoucher : données → palette, astre, courant, pierres |
 | `compose.ts` | `composeDay(day, norms, seed) → Scene`, pur, sans p5 |
 | `scene.ts` | types de la `Scene` (JSON pur, repère 1000 × 1000) |
-| `render-p5.ts` | dessine une `Scene` avec p5 (mode instance) ou sur n'importe quel contexte 2D |
+| `render-canvas.ts` | dessine une `Scene` sur n'importe quel contexte 2D, sans p5 (Worker compris) |
+| `render-p5.ts` | monte une `Scene` avec p5 (mode instance) ; réexporte `drawSceneToContext` |
 | `geometry.ts` | Catmull-Rom → Bézier, partagé par les rendus (canvas aujourd'hui, SVG demain) |
 | `index.ts` | API publique (sans p5) + `composeForDate(date, history)` |
 
 Aperçus : [`docs/previews/`](docs/previews/).
+
+## Moteur v2 (`src/engine-v2/`)
+
+Chaque jour est rendu par **une technique parmi 10**, choisie de façon déterministe. La v1 reste
+intacte : sélecteur « v1 · v2 » sur la page du jour et dans la galerie (`?engine=v1|v2`, mémorisé ;
+v2 par défaut pour une première visite).
+
+| Fichier | Rôle |
+|---|---|
+| `packages/shared/src/selection/constants.ts` | **le** fichier des réglages du choix : styles, familles, formule de K, tranches, poids, ajustements, exclusions |
+| `packages/shared/src/selection/select.ts` | `selectDay`, `computeChain` : le même calcul pour le navigateur et l'API (qui fige les styles) |
+| `select.ts` | style figé renvoyé par l'API, sinon calcul local (`selectStyles`) |
+| `input.ts` | `buildTechniqueInput(date, history, style)` : journée, centiles, graine, palette, météo / pas horaires (ou `FALLBACKS`), lune |
+| `palette.ts` | palettes v2 : saison (durée du jour), humeur (sommeil), nuance (température si connue) |
+| `techniques/` | une technique par fichier (+ son test) ; `index.ts` est le registre ; `placeholder.ts` un rendu provisoire pour une future technique |
+| `render.ts`, `render.worker.ts` | rendu dans un pool de Workers (OffscreenCanvas), repli sur le fil principal |
+| `fiche.ts` | modèle de la fiche « Comment cette œuvre a été choisie » (la page en fait du HTML : `pages/day/fiche-view.ts`) |
+
+Les 10 techniques sont portées :
+
+| Technique | Procédé | Export |
+|---|---|---|
+| Marée | œuvre v1 (bruit et champ de flux) | PNG, SVG |
+| Attracteur | chaos déterministe (Clifford) | PNG |
+| Pelage | réaction-diffusion (Gray-Scott) | PNG |
+| Corail | croissance (colonisation de l'espace) | PNG, SVG |
+| Harmonographe | courbe paramétrique amortie | PNG, SVG |
+| Vitrail | Voronoï | PNG, SVG |
+| Constructif | composition géométrique à règles | PNG, SVG |
+| Réseau | vie artificielle (physarum) | PNG |
+| Hachures | tracé de table traçante | PNG, SVG |
+| Pixels | glitch (tri de pixels) | PNG |
+
+Les plus coûteuses sont Pelage (~2–2,6 s à 1000 px, miniature ~0,1 s) et Réseau (~0,4–0,8 s, miniature ~0,08 s), mesurées dans Chromium ; toutes tournent dans le Worker de rendu. `placeholder.ts` (rendu provisoire) reste disponible pour une future technique.
+
+```bash
+pnpm --filter @sillage/art v2:styles                 # style de chaque jour des fixtures + fréquences
+pnpm --filter @sillage/art v2:styles -- range.json   # idem sur un export de GET /range
+pnpm --filter @sillage/art exec vite --port 5231 --strictPort &
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers pnpm --filter @sillage/art capture:v2   # déterminisme + captures docs/previews/v2/
+```
+
+### Ajouter une technique
+
+1. Copier `src/engine-v2/techniques/_template.ts` en `techniques/<id>.ts` (id de `STYLES`, ex. `pelage`).
+2. Porter l'esquisse `sketches/techniques/<id>.ts` dans `render(ctx, S, input, options)` : tout en fractions
+   de `S` ; `input.norms.*` (centiles, **`null` si absent** → valeur neutre + `drawMissingMark`) ;
+   `input.palette` ; `weatherOrFallback(input.weather)`, `hourlyOrFallback(input)`, `input.moon` ;
+   `rngFor(input, "<id>")` ; jamais `Math.random`, l'horloge ni `document` (`createCanvas()` à la place) ;
+   `options.quality === "preview"` → moins d'itérations pour les miniatures.
+3. `explain(input)` : une ligne par paramètre piloté par une donnée (paramètre, donnée, valeur).
+4. `heavy: true` si > 1 s à 1000 px (il tourne déjà dans un Worker) ; `maxExportSize` ; `toSvg` seulement si vectoriel.
+5. Dans `techniques/index.ts`, remplacer `createPlaceholder(...)` par le module.
+6. `pnpm --filter @sillage/art test` puis `capture:v2` (vérifie que l'image est identique d'un rendu à l'autre).
+
+Déterminisme : même journée, même entrée, même image dans un navigateur donné. L'Attracteur étant
+chaotique, deux moteurs JavaScript dont `Math.sin` diffère au dernier bit peuvent dessiner des
+détails différents de la même forme. Le style choisi, lui, est figé par l'API au bout de 3 jours.
 
 ## Galerie et exports (phase 6)
 

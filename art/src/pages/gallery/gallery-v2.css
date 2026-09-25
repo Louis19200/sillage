@@ -1,0 +1,57 @@
+/* Galerie, moteur v2 : couleur de famille sous chaque œuvre, compteurs par technique. */
+:root {
+  --fam-organique: #4f8a6b;
+  --fam-mathematique: #3f5fa8;
+  --fam-geometrique: #c0823a;
+  --fam-numerique: #b0417a;
+}
+
+.cell--fam-organique { --fam: var(--fam-organique); }
+.cell--fam-mathematique { --fam: var(--fam-mathematique); }
+.cell--fam-geometrique { --fam: var(--fam-geometrique); }
+.cell--fam-numerique { --fam: var(--fam-numerique); }
+
+/* Liseré de famille sous la miniature : la vue année se lit d'un coup d'œil. */
+[data-engine="v2"] .cell--art[data-style]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 2px;
+  background: var(--fam);
+  border-radius: 1px;
+}
+
+[data-engine="v2"] .cell--provisional img { filter: saturate(0.75); }
+
+.techniques {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  margin: 0 auto 12px;
+  font-size: 0.72rem;
+  color: var(--muted, #8a867e);
+}
+
+.techniques:empty { display: none; }
+
+.techniques__label {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.64rem;
+}
+
+.techniques__item { display: inline-flex; align-items: center; gap: 5px; cursor: help; }
+.techniques__item b { color: var(--ink, #2b2a28); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.techniques__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--fam);
+}
+
+.gallery__header .engine-switch { margin-left: auto; }

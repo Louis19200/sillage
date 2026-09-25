@@ -17,6 +17,7 @@
     "expo-background-task": "~57.0.20",
     "expo-build-properties": "~57.0.22",
     "expo-dev-client": "~57.0.19",
+    "expo-location": "~57.0.20",
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",

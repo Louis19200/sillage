@@ -3,7 +3,7 @@
  * du moteur (`drawSceneToContext`) sur un canvas détaché de `size` × `size` pixels réels,
  * sans rapport avec la taille de l'écran ni la densité de pixels.
  */
-import { drawSceneToContext } from "../engine/render-p5";
+import { drawSceneToContext } from "../engine/render-canvas";
 import type { Scene } from "../engine/scene";
 import { setPngDpi } from "./png-dpi";
 

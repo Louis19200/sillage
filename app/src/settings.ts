@@ -5,6 +5,7 @@
 import * as SecureStore from "expo-secure-store";
 
 import { healthConnectReader } from "./healthConnect";
+import { realLocationDeps } from "./locationDevice";
 import {
   EMPTY_SYNC_STATE,
   parseSyncState,
@@ -84,6 +85,7 @@ export async function saveSyncState(state: SyncState): Promise<void> {
     lastAttempt: compact(state.lastAttempt),
     lastSuccess: compact(state.lastSuccess),
     lastBackground: b ? { ...b, message: b.message.slice(0, 300) } : null,
+    lastLocation: state.lastLocation ? { ...state.lastLocation, message: state.lastLocation.message.slice(0, 300) } : null,
   });
   await SecureStore.setItemAsync(KEY_SYNC_STATE, value);
 }
@@ -96,6 +98,7 @@ export function realSyncDeps(): SyncDeps {
     loadSettings,
     loadState: readSyncState,
     saveState: saveSyncState,
+    location: realLocationDeps,
   };
 }
 

@@ -22,6 +22,8 @@ import { ensureBackgroundTaskRegistered, type BackgroundTaskInfo } from "../back
 import { Button } from "../components";
 import { formatDayLabel, formatLocalDateTime } from "../format";
 import { getBackgroundAccess, requestBackgroundAccess } from "../healthConnect";
+import { describeLocation, type LocationRun } from "../location";
+import { captureOnOpen, safeLoadLocationStore } from "../locationDevice";
 import { hasSettings, loadSyncState, syncNow } from "../settings";
 import {
   AUTO_DAYS,
@@ -73,6 +75,7 @@ export function SyncPanel(props: { onOpenSettings: () => void }): ReactNode {
   const [running, setRunning] = useState<SyncKind | null>(null);
   const [state, setState] = useState<SyncState>(EMPTY_SYNC_STATE);
   const [auto, setAuto] = useState<AutoInfo | null>(null);
+  const [locationEnabled, setLocationEnabled] = useState(false);
   const busy = useRef(false);
 
   const run = useCallback(async (kind: SyncKind) => {
@@ -94,7 +97,13 @@ export function SyncPanel(props: { onOpenSettings: () => void }): ReactNode {
     const [s, info] = await Promise.all([loadSyncState(), loadAutoInfo()]);
     setState(s);
     setAuto(info);
-    if (shouldSyncOnOpen(s, new Date(), info.configured)) await run("open");
+    if (shouldSyncOnOpen(s, new Date(), info.configured)) {
+      await run("open");
+    } else if (!busy.current) {
+      // Pas de synchro : on relève seulement la position du jour si elle manque (sans réseau).
+      await captureOnOpen();
+    }
+    setLocationEnabled((await safeLoadLocationStore()).enabled);
   }, [run]);
 
   useEffect(() => {
@@ -132,6 +141,10 @@ export function SyncPanel(props: { onOpenSettings: () => void }): ReactNode {
         <RecordView title="Dernière tentative" record={lastAttempt} t={t} />
       ) : (
         <Text style={[styles.text, { color: t.muted }]}>Aucune synchro depuis l'installation.</Text>
+      )}
+
+      {!running && (lastAttempt || locationEnabled) && (
+        <LocationLine run={state.lastLocation} enabled={locationEnabled} t={t} />
       )}
 
       {!running && lastAttempt && !lastAttempt.ok && lastSuccess && (
@@ -259,6 +272,20 @@ const OUTCOME_LABEL:Record<BackgroundRun["outcome"], string> = {
 function rangeLabel(r: SyncRecord): string {
   if (!r.from || !r.to) return `${r.days} jours`;
   return `${r.days} jours, du ${formatDayLabel(r.from)} au ${formatDayLabel(r.to)}`;
+}
+
+/** « Position : envoyée / désactivée / route pas encore disponible », sans aucune coordonnée. */
+function LocationLine(props: { run: LocationRun | null; enabled: boolean; t: Theme }): ReactNode {
+  const { run, enabled, t } = props;
+  const failed = enabled && run !== null && (run.outcome === "failed" || run.outcome === "no-permission");
+  return (
+    <View style={{ marginTop: 6 }}>
+      <Text style={[styles.text, { color: failed ? t.danger : t.text }]}>{describeLocation(run, enabled)}</Text>
+      {enabled && run && run.outcome !== "sent" && run.outcome !== "disabled" && (
+        <Text style={[styles.detail, { color: t.muted }]}>{run.message}</Text>
+      )}
+    </View>
+  );
 }
 
 function RecordView(props: { title: string; record: SyncRecord; t: Theme }): ReactNode {
