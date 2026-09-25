@@ -51,9 +51,9 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 **Terminé quand :** chaque date donne une image unique et stable.
 
 ## Phase 6 : galerie et impression (`gallery`)
-- [ ] Grille par mois et par année.
-- [ ] Export PNG haute définition et SVG.
-- [ ] (Option) génération automatique chaque matin de l'œuvre de la veille.
+- [x] Grille par mois et par année.
+- [x] Export PNG haute définition et SVG.
+- [x] (Option) génération automatique chaque matin de l'œuvre de la veille. *(Script prêt ; planification à brancher, voir notes de phase 6.)*
 
 ## Phase 7 : fiabilisation (`ops-reliability`)
 - [ ] Journal des ingestions.
@@ -134,3 +134,16 @@ Config livrée, **mise en ligne à faire par toi** en suivant [docs/DEPLOY.md](D
 - La page lit `GET /range` (J-90 → J) plutôt que `/day/:date` (un seul appel suffit à J et à sa référence) ; `getDay` existe dans la source `api` pour la galerie.
 - Mode `api` validé contre un faux serveur seulement : l'API réelle devra autoriser l'origine de la page (CORS) pour `GET /range` avec l'en-tête `Authorization`. `VITE_API_TOKEN` finit dans le bundle client : n'y mettre qu'un jeton de **lecture**.
 - `index.html` à la racine de `art/` est la page du jour ; la galerie pourra en faire une entrée Vite parmi d'autres.
+
+### Phase 6
+Galerie `/gallery/?year=YYYY` et `/gallery/?month=YYYY-MM`, exports PNG/SVG sur la page du jour. Détails et commandes : section « Galerie et exports » d'`art/README.md`. Aperçus : `art/docs/previews/gallery-*.jpg`, `export-svg-2026-07-14.png`, `day-export-2026-07-14.png`.
+- **Navigation** : page du jour → « galerie » (mois de la date) ; case d'une miniature → page du jour, qui porte « Exporter PNG [2000 | 4000 | 8000 px] · SVG ». Vue année : sélecteur 2019 → année courante (`VITE_GALLERY_FIRST_YEAR`), une année vide affiche « Aucune journée enregistrée » sur une grille de points. Une seule requête `/range` par vue (période + 90 jours avant).
+- **Jour « sans données »** = absent de la base ou les trois métriques à `null` : un point (vue année), un carré en pointillés « sans données » (vue mois). Il reste cliquable (la page du jour rend la brume).
+- **Performance mesurée** (Chromium headless, conteneur 4 vCPU, build de production, faux serveur `/range` de 7 ans, 363 jours avec données en 2024) : 1ʳᵉ miniature en 60–100 ms, les 363 en **2,4–2,5 s à froid** avec 3 workers (composition ~19 ms par scène dans un worker, ~2,7 ms par miniature sur le fil principal, plus longue tranche 13–19 ms : pas de gel), **70–80 ms au second passage** (cache IndexedDB, 363/363). Mois : 31 œuvres en ~0,5 s à froid, ~10 ms en cache. Le débit à froid est borné par le nombre de cœurs : 363 × 19 ms / nombre de workers, soit ~1,2 s attendu sur un portable 8 threads (6 workers). La seule tâche longue restante est l'évaluation du bundle p5 (~130 ms) au chargement.
+- **SVG = PNG** : même `Scene`, `sceneToSvg` traduit `drawSceneToContext` primitive par primitive. Vérifié dans Chromium à 4000 px puis réduits à 1000 : écart moyen 0,2/255, max 13/255 (2026-07-14) ; 0,04/255 (2026-06-06). Le PNG Node (resvg) vs le PNG navigateur : écart moyen 1,1/255. Le SVG exporté par le navigateur est identique octet pour octet à l'instantané Node (`src/export/__snapshots__/`). 250 Ko pour une journée chargée (chemins relatifs au centième), PNG 4000 px ~11 Mo en ~0,7 s, bloc `pHYs` à 300 dpi (33,9 cm).
+- **Génération de la veille** : `pnpm --filter @sillage/art render:yesterday` (tsx + `@resvg/resvg-js`, sans navigateur) écrit `art/exports/YYYY-MM-DD.{svg,png}` ; sortie 3 si la journée n'a pas encore de données. Pas branché : Vercel Cron n'a pas de disque durable, un workflow GitHub Actions planifié est proposé dans `art/README.md` (**à ajouter par `deploy`**, avec les secrets `SILLAGE_API_URL` et `SILLAGE_READ_TOKEN` = `READ_TOKEN`). Où garder les images (artefact 90 jours, branche, Vercel Blob) reste à décider.
+- **Hors zone, minimal** : `art/gallery/index.html` (entrée) et `build.rollupOptions.input` dans `art/vite.config.ts` ; `art/index.html` (ligne export + lien galerie, feuille `src/export/export.css`) et trois lignes dans `src/pages/day/main.ts` (`mountExportControls`, lien galerie, `innerHeight - 230` au lieu de 200 pour garder l'œuvre dans l'écran) ; `scripts` dans `art/tsconfig.json` ; `@resvg/resvg-js` et `tsx` en devDependencies d'art ; trois variables documentées dans `.env.example`.
+- **Vercel** : aucun changement de `art/vercel.json`. `vercel build --prod` (CLI 60.0.1, hors ligne) sort `static/gallery/index.html`, servi tel quel à `/gallery/` ; le worker est un fichier de `assets/` de même origine. **Redéployer** le projet `art` suffit.
+- **Piège de build** : un `import "./x.css"` dans un module partagé par les deux entrées rend `vite build` ~100× plus lent (106 s, `vite:css-post` sur le chunk p5 de 1,1 Mo). Les feuilles passent donc par des `<link>` dans le HTML.
+- **Pour `generative-art`** : (1) `drawSceneToContext` vit dans `render-p5.ts`, qui importe p5 au chargement ; p5 plante dans un worker (`window is not defined`), donc les miniatures sont dessinées sur le fil principal. Un `render-canvas.ts` sans p5 (le même code, `render-p5` le réexportant) permettrait de dessiner dans les workers (`OffscreenCanvas`) et de sortir p5 du bundle de la galerie. (2) Avec l'historique réel, **2019 → avril 2023 n'ont pas de sommeil** : toutes ces œuvres sont en palette de brume grise (voir `gallery-year-2019-incomplete.jpg`) ; c'est fidèle au mapping, mais quatre ans de gris méritent peut-être une palette « sommeil inconnu » moins uniforme. (3) La composition (~19 ms en navigateur) domine le coût à froid ; un mode « aperçu » (moins de sillages pour une miniature de 64 px) diviserait le temps d'une vue année.
+
