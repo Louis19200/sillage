@@ -13,6 +13,10 @@ Compter une heure la première fois. Coût : **0 €** (Vercel Hobby + Neon Free
                 (site statique Vite, dossier art/)                                           │
                                                                                              ▼
  GitHub Actions : CI sur chaque PR ; pg_dump chiffré chaque nuit ◄───────────────────────────┘
+
+ Surveillance (section 12) :
+   Vercel Cron (1×/jour) ──GET /cron/check-freshness──► API ──► ntfy.sh ──► app ntfy (téléphone)
+   UptimeRobot (30 min)  ──GET /health (public)───────► API ──► e-mail si 503 ou injoignable
 ```
 
 ## Pourquoi ce montage
@@ -93,6 +97,8 @@ Range chaque valeur dans ton gestionnaire de mots de passe : Vercel les masque e
 | `PROTECT_READS` | `true` | lectures protégées par token (données personnelles) |
 | `CORS_ORIGINS` | `https://sillage-art.vercel.app` | l'URL exacte du projet art (section 5), sans `/` final ; plusieurs : séparées par des virgules |
 | `ENABLE_JOBS` | **ne pas définir** | `node-cron` n'a rien à faire en serverless ; les crons passent par Vercel |
+| `NTFY_TOPIC` | section 12 | alertes « plus de données » sur le téléphone ; sans elle, les alertes ne vont que dans *Logs* |
+| `NTFY_TOKEN`, `NTFY_SERVER`, `ALERT_EMAIL` | facultatifs, section 12 | |
 
 Avec la CLI, depuis `api/` (le premier `vercel link` demande le projet : choisis `sillage-api`) :
 
@@ -175,6 +181,7 @@ Invoke-RestMethod "$API/range?from=2026-09-01&to=2026-09-30" -Headers @{ Authori
   ```bash
   curl -s "$API/cron/github-sync" -H "Authorization: Bearer $CRON_SECRET"
   ```
+- Deuxième cron, `{ "path": "/cron/check-freshness", "schedule": "5 7 * * *" }` : le contrôle de fraîcheur des données (section 12).
 - Ajouter une tâche : l'enregistrer dans `api/src/jobs.ts` (nom), puis une ligne `{ "path": "/cron/<nom>", "schedule": "…" }` dans `api/vercel.json`.
 
 ## 4. Remplir l'historique GitHub depuis ton poste
@@ -325,6 +332,116 @@ npx vercel build --prod                             # si le projet est lié (ver
 | Erreur CORS dans le navigateur | `CORS_ORIGINS` ≠ origine exacte de la page d'art |
 | Cron en 401 | `CRON_SECRET` absent du déploiement de production |
 | Premier appel lent (1–2 s) | réveil de Neon (veille après 5 min) et démarrage à froid de la fonction : normal |
+| `/health` en 503 | la fonction tourne mais la base ne répond pas (en moins de 8 s) : console Neon, `DATABASE_URL` |
+| Aucune notification ntfy | `NTFY_TOPIC` absent ou ajouté sans redéployer (ligne `notifier_missing` dans *Logs*), ou topic différent sur le téléphone |
+
+## 12. Surveillance
+
+Trois filets, tous gratuits :
+
+| Quoi | Détecte | Prévient par |
+|---|---|---|
+| Cron `check-freshness` (1×/jour) | le téléphone n'envoie plus rien, ou la synchro GitHub échoue | notification **ntfy** sur le téléphone (+ e-mail en option) |
+| Moniteur externe sur `GET /health` | API en panne, base injoignable, variable cassée | e-mail d'UptimeRobot |
+| Journaux structurés (*Logs* Vercel) | le détail de chaque ingestion et de chaque tâche | à consulter |
+
+### 12.1 Le contrôle de fraîcheur
+
+`GET /cron/check-freshness` (enregistré dans `api/src/jobs.ts`, code dans `api/src/ops/`) regarde, dans `ingest_log`, la dernière ingestion **réussie** de chaque source :
+
+| Source | Seuil | Arrivée normale des données |
+|---|---|---|
+| `health` | 48 h | l'app Android (synchro manuelle, puis tâche quotidienne) ; aussi l'import Samsung, qui passe par `/ingest/health` |
+| `github` | 72 h | cron `github-sync`, chaque nuit vers 02:15 UTC |
+
+- Source en retard : **une** alerte. Puis plus rien tant que la situation ne change pas, même si le contrôle tourne tous les jours.
+- Données revenues : **un** message « rétabli ».
+- L'état (« à jour » / « en retard ») est dans la table `alert_state` (migration `002`), pas en mémoire : il survit aux redémarrages et à une double exécution du cron. Si ntfy refuse l'envoi, l'état ne change pas, la tâche finit en 500 (visible dans *Logs*) et le contrôle du lendemain réessaie.
+
+**Ce que « 48 h » veut dire ici.** Sur le plan Hobby, un cron tourne au plus une fois par jour, à l'heure près : `5 7 * * *` part entre 07:00 et 07:59 UTC (9 h–10 h à Paris l'été, 8 h–9 h l'hiver). L'alerte part donc **au premier contrôle après 48 h** sans données santé, c'est-à-dire entre 48 h et 72 h après la dernière synchro réussie. Pour GitHub, après environ trois nuits de synchro ratées. Le message « rétabli » part au contrôle qui suit le retour des données (au plus ~24 h plus tard). En local (`ENABLE_JOBS=true`), node-cron fait le même contrôle toutes les heures (`5 * * * *`).
+
+Un premier contrôle sur une source déjà à jour ne notifie rien. Une source qui n'a **jamais** eu d'ingestion réussie compte comme en retard (une alerte).
+
+### 12.2 Recevoir les alertes sur le téléphone (ntfy)
+
+[ntfy](https://ntfy.sh) est un service de notifications gratuit et open source : l'API publie un message sur un *topic*, l'app ntfy du téléphone y est abonnée. Pas de compte nécessaire.
+
+1. **Installer l'app** : Play Store → « ntfy » (éditeur : Philipp C. Heckel), ou F-Droid.
+2. **Choisir un topic difficile à deviner.** Sur ntfy.sh, un topic est public : **quiconque connaît son nom peut lire les alertes et en publier**. Prends un nom long et aléatoire :
+   ```bash
+   echo "sillage-$(openssl rand -hex 12)"
+   # ou, partout : node -e "console.log('sillage-' + require('crypto').randomBytes(12).toString('hex'))"
+   ```
+   Range-le avec tes autres secrets.
+3. **S'abonner** : app ntfy → **+** → *Topic name* = ce nom, serveur par défaut (`ntfy.sh`) → *Subscribe*, et accepte les notifications Android. Pour les recevoir téléphone en veille : garde la réception instantanée (*Instant delivery*) pour ce topic et exclus ntfy de l'optimisation de batterie si Android le propose.
+4. **Tester le téléphone** depuis ton poste :
+   ```bash
+   curl -d "Test Sillage" https://ntfy.sh/<ton-topic>
+   # PowerShell : Invoke-RestMethod -Method Post -Uri "https://ntfy.sh/<ton-topic>" -Body "Test Sillage"
+   ```
+   La notification doit apparaître en quelques secondes.
+5. **Déclarer le topic sur Vercel** (projet `sillage-api`, Production), puis **Redeploy** :
+   ```bash
+   cd api && vercel env add NTFY_TOPIC production --sensitive
+   ```
+
+Facultatif :
+
+| Variable | Sert à |
+|---|---|
+| `ALERT_EMAIL` | ntfy.sh envoie aussi chaque alerte à cette adresse (fonction e-mail de ntfy, avec un quota quotidien ; Sillage n'envoie qu'un message par changement d'état). |
+| `NTFY_TOKEN` | token d'accès si tu réserves le topic avec un compte ntfy (il n'est alors plus lisible par d'autres) ou si tu utilises un serveur protégé. |
+| `NTFY_SERVER` | ton propre serveur ntfy (défaut `https://ntfy.sh`). |
+
+Sans `NTFY_TOPIC`, rien ne plante : chaque instance écrit un avertissement `notifier_missing` dans *Logs*, et les alertes ne vont que dans les journaux (événement `alert`). Un changement d'état survenu dans ce mode compte comme notifié : il ne sera pas renvoyé une fois ntfy configuré.
+
+### 12.3 Tester la chaîne complète sans attendre 48 h
+
+Une fois `NTFY_TOPIC` en place et redéployé, pendant que les données santé sont à jour :
+
+1. Lance le cron une fois (étape 2) pour créer les lignes d'état, sans notification.
+2. Console Neon → *SQL Editor* :
+   ```sql
+   UPDATE alert_state SET status = 'stale' WHERE check_name = 'freshness:health';
+   ```
+3. Vercel → *Settings → Cron Jobs* → `/cron/check-freshness` → **Run** (ou `curl -s "$API/cron/check-freshness" -H "Authorization: Bearer $CRON_SECRET"`).
+4. Le téléphone reçoit « Sillage : données santé rétablies » : la chaîne Vercel → base → ntfy → téléphone fonctionne. Aucune donnée n'a été modifiée.
+
+Le vrai test (« Terminé quand » de la phase 7) : ne plus synchroniser le téléphone pendant 48 h → notification « plus de données santé » au contrôle suivant ; synchroniser → « rétablies » au contrôle d'après.
+
+### 12.4 Moniteur externe sur `/health`
+
+`GET /health` est public (aucun token, même avec `PROTECT_READS=true`) et ne renvoie aucune donnée personnelle :
+
+```json
+{ "status": "ok", "db": "ok", "last_ingest": { "health": "2026-09-25T06:40:12.000Z", "github": "2026-09-25T02:31:05.000Z" } }
+```
+
+`503` si la base ne répond pas en moins de 8 s. `node api/scripts/check-prod.mjs` le vérifie aussi et affiche l'âge de chaque dernière ingestion.
+
+**UptimeRobot** (plan gratuit, usage personnel) :
+
+1. uptimerobot.com → créer un compte → **New monitor**.
+2. Type **HTTP(s)**, URL `https://sillage-api.vercel.app/health` (ton URL réelle), nom « Sillage API ».
+3. **Intervalle : 30 minutes** (ou 60), pas 5. Chaque appel réveille Neon, qui ne se remet en veille qu'après 5 min d'inactivité : un appel toutes les 5 min le garderait éveillé en permanence et consommerait les heures de calcul du plan gratuit. Toutes les 30 min, la base dort l'essentiel du temps.
+4. Alerte : ton e-mail (contact par défaut du compte). Tout code hors 2xx, dont le 503, compte comme « down ».
+5. *Create monitor*, puis vérifie qu'il passe « Up ».
+
+Équivalent : **Better Stack Uptime** (plan gratuit) → *Create monitor* → « URL becomes unavailable » → même URL, intervalle le plus long proposé.
+
+Le moniteur ne remplace pas le contrôle de fraîcheur : `/health` reste à 200 quand le téléphone n'envoie plus rien. C'est `check-freshness` qui le signale.
+
+### 12.5 Journaux structurés
+
+Chaque ingestion et chaque tâche écrivent **une ligne JSON** dans *Logs* (projet `sillage-api` → *Logs*, recherche par texte, ex. `"event":"ingest"`) :
+
+```json
+{"ts":"2026-09-25T06:40:12.301Z","level":"info","event":"ingest","source":"health","days":7,"duration_ms":184,"ok":true,"http_status":200}
+{"ts":"2026-09-25T02:31:05.912Z","level":"info","event":"ingest","source":"github","days":9,"duration_ms":1210,"ok":true,"job":"github-sync"}
+{"ts":"2026-09-25T07:12:40.118Z","level":"warn","event":"freshness","source":"health","status":"stale","age_hours":50.5,"threshold_hours":48,"action":"alerted","notifier":"ntfy"}
+```
+
+Événements : `ingest` (source, jours, durée, succès ou message d'erreur court), `job` (chaque `/cron/:name` exécuté), `freshness` (un par source et par contrôle), `health` (base injoignable), `alert` (sans ntfy), `notifier_missing`. Jamais de token, de corps de requête ni de valeur de santé : des compteurs, des durées et des messages d'erreur tronqués, où ce qui ressemble à un token est masqué. Vercel Hobby ne garde ces journaux que peu de temps ; l'historique durable reste `ingest_log` en base.
 
 ## Tout refaire depuis zéro : la liste
 
@@ -338,3 +455,4 @@ npx vercel build --prod                             # si le projet est lié (ver
 8. Projet `sillage-art`, racine `art`, variables Vite, puis `CORS_ORIGINS` de l'API et redéploiement (5).
 9. App Android configurée avec l'URL et `INGEST_TOKEN`, synchro vérifiée (6).
 10. Secrets `BACKUP_*` + variable `PG_MAJOR`, sauvegarde lancée une fois à la main (8).
+11. App ntfy + `NTFY_TOPIC`, test de bout en bout, moniteur UptimeRobot sur `/health` (12).

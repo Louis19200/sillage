@@ -58,9 +58,9 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 - [ ] (Option) génération automatique chaque matin de l'œuvre de la veille.
 
 ## Phase 7 : fiabilisation (`ops-reliability`)
-- [ ] Journal des ingestions.
-- [ ] Alerte (mail ou notification) si aucune donnée santé depuis 48 h.
-- [ ] Endpoint `/health`.
+- [x] Journal des ingestions.
+- [x] Alerte (mail ou notification) si aucune donnée santé depuis 48 h.
+- [x] Endpoint `/health`.
 
 ## Phase 8 : extensions (`extensions`)
 Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteur + une colonne ou une table + un paramètre visuel.
@@ -136,6 +136,16 @@ Config livrée, **mise en ligne à faire par toi** en suivant [docs/DEPLOY.md](D
 - La page lit `GET /range` (J-90 → J) plutôt que `/day/:date` (un seul appel suffit à J et à sa référence) ; `getDay` existe dans la source `api` pour la galerie.
 - Mode `api` validé contre un faux serveur seulement : l'API réelle devra autoriser l'origine de la page (CORS) pour `GET /range` avec l'en-tête `Authorization`. `VITE_API_TOKEN` finit dans le bundle client : n'y mettre qu'un jeton de **lecture**.
 - `index.html` à la racine de `art/` est la page du jour ; la galerie pourra en faire une entrée Vite parmi d'autres.
+
+### Phase 7
+Livré dans `api/src/ops/` (tests : `api/src/ops/ops.test.ts`, 19 tests PGlite ; `vercel:check` rejoue `/health` et `/cron/check-freshness` sur le bundle avec le vrai driver). Mode d'emploi : docs/DEPLOY.md, section 12 « Surveillance ».
+- **`GET /health`** : public (même avec `PROTECT_READS=true`, testé), `Cache-Control: no-store`, répond aussi à `HEAD`. `200 {status, db, last_ingest: {health, github}}` (dernière ingestion **réussie**, ISO), `503 {status:"error", db:"error", last_ingest: {…null}}` si la base échoue ou ne répond pas en 8 s. Le corps du 503 n'était pas précisé dans docs/API.md (non modifié).
+- **`check-freshness`** (jobs.ts ; Vercel `5 7 * * *` UTC, node-cron local `5 * * * *`) : seuils `health` 48 h, `github` 72 h (`FRESHNESS_RULES` dans `api/src/ops/freshness.ts`). Une alerte au passage « à jour → en retard », un « rétabli » au retour, rien entre les deux. État dans `alert_state` (migration additive `002_ops_alert_state.sql`, plus un index partiel `ingest_log … WHERE ok`) ; transition « réservée » par un UPDATE conditionnel, donc une double livraison du cron n'envoie qu'une alerte ; envoi en échec → état inchangé, tâche en 500, nouvel essai au contrôle suivant. Contrôle quotidien : l'alerte santé part entre 48 h et 72 h après la dernière synchro réussie.
+- **Notifier** : interface `Notifier` (`api/src/ops/notifier.ts`) ; `NtfyNotifier` (publication JSON, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, et `ALERT_EMAIL` transmis à ntfy qui fait suivre par e-mail) ; `LogNotifier` en repli, avec un avertissement `notifier_missing` au démarrage de chaque instance. Pas de SMTP (pas de dépendance) : l'e-mail passe par ntfy.
+- **Journaux structurés** : middlewares sur `/ingest/*` et `/cron/*` uniquement (jamais `*`), montés par **une** ligne au début de `createApp` (`mountOps(app, deps)`, avant les routes, car Hono exécute les middlewares dans l'ordre d'enregistrement) + son import. Événements `ingest`, `job`, `freshness`, `health`, `alert`. Les chaînes passent par `sanitize` (Bearer, tokens GitHub, hex ≥ 32 masqués, 300 caractères max). Les ingestions lancées hors HTTP (node-cron local, scripts de backfill) n'ont que leur ligne `ingest_log`, pas de ligne JSON.
+- Hors zone, autorisé : `api/vercel.json` (cron), `api/api/_smoke.ts` (migration 002, `/health` public, `/cron/check-freshness`), `api/scripts/check-prod.mjs` (`/health` + âge des dernières ingestions), `.env.example` (variables ntfy). **Hors zone, inévitable** : `test/db.test.ts` et `test/postgres-driver.test.ts` listaient les migrations en dur, `002_ops_alert_state.sql` y est ajoutée.
+- **Reste à faire (toi)** : app ntfy + `NTFY_TOPIC` sur Vercel puis Redeploy (DEPLOY.md 12.2), test de bout en bout (12.3), moniteur UptimeRobot à 30 min sur `/health` (12.4). « Terminé quand » (48 h sans synchro → notification, reprise → notification) n'est vérifié qu'en tests : à constater en production.
+- Pour `android-app` (étape 6) : la tâche quotidienne en arrière-plan rend le seuil de 48 h pertinent ; tant qu'elle n'existe pas, deux jours sans ouvrir l'app déclenchent l'alerte (voulu : c'est le rappel).
 
 ### Import Samsung Health (hors phases)
 Health Connect ne reçoit les données de Samsung Health qu'à partir de leur connexion (constaté sur Galaxy Note 10+, Android 12). Historique récupéré par l'export « Télécharger mes données personnelles » : `pnpm --filter api samsung:import <dossier> [--send]` (voir api/README.md). Export de l'utilisateur : 2446 journées de pas (2019-07-05 → 2026-09-24), 492 nuits. **Importé en production le 2026-09-25 (2446 journées).**

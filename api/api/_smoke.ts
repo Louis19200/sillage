@@ -78,6 +78,7 @@ const build = await new Promise<{ status: number | null; stdout: string }>((done
 });
 check("build (migrations + bundle) réussi", build.status === 0);
 check("migration 001 appliquée pendant le build", /migration appliquée : 001_/.test(build.stdout));
+check("migration 002 (alertes, phase 7) appliquée pendant le build", /migration appliquée : 002_/.test(build.stdout));
 if (build.status !== 0) {
   await pgServer.stop();
   process.exit(1);
@@ -155,6 +156,26 @@ check("GET /cron/github-sync sans CRON_SECRET → 401 (tâche présente dans le 
 
 const cronMissing = await fetch(`${base}/cron/inconnue`, { headers: { authorization: `Bearer ${CRON}` } });
 check("GET /cron/inconnue avec CRON_SECRET → 404", cronMissing.status === 404, { status: cronMissing.status, body: await cronMissing.text() });
+
+// Contrôle de fraîcheur (phase 7) avec le vrai driver sur la table alert_state ; sans NTFY_TOPIC,
+// l'alerte ne part que dans les journaux (aucun appel réseau).
+delete process.env.NTFY_TOPIC;
+const freshness = await fetch(`${base}/cron/check-freshness`, { headers: { authorization: `Bearer ${CRON}` } });
+const freshnessBody = (await freshness.json()) as { ok?: boolean; result?: { checks?: { source: string; action: string }[] } };
+check(
+  "GET /cron/check-freshness avec CRON_SECRET → 200 (santé fraîche, GitHub jamais synchronisé → alerte)",
+  freshness.status === 200 &&
+    JSON.stringify(freshnessBody.result?.checks?.map((c) => [c.source, c.action])) === JSON.stringify([["health", "initialized"], ["github", "alerted"]]),
+  freshnessBody,
+);
+
+const health = await fetch(`${base}/health`);
+const healthBody = (await health.json()) as { status?: string; db?: string; last_ingest?: Record<string, string | null> };
+check(
+  "GET /health sans token (PROTECT_READS=true) → 200, base ok, ingestion santé datée",
+  health.status === 200 && healthBody.status === "ok" && healthBody.db === "ok" && typeof healthBody.last_ingest?.health === "string",
+  healthBody,
+);
 
 const unknown = await fetch(`${base}/nope`, { headers: auth });
 check("route inconnue → 404", unknown.status === 404);
