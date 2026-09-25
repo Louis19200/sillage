@@ -15,6 +15,7 @@ import type { Db } from "./db";
 import type { Env } from "./env";
 import { hasJob, invokeJob } from "./jobs";
 import { mountOps } from "./ops";
+import { mountContext } from "./context";
 
 export type AppDeps = {
   db: Db;
@@ -69,6 +70,7 @@ export function createApp(deps: AppDeps): Hono {
   const logError = deps.logError ?? ((msg, err) => console.error(msg, err));
   const app = new Hono();
   mountOps(app, deps); // ops-reliability : GET /health (public) + journaux JSON de /ingest/* et /cron/* ; avant les routes (ordre des middlewares)
+  mountContext(app, deps); // extensions (phase 8) : POST /ingest/location + `context` dans /day et /range ; après mountOps, avant les routes de lecture
   /** Écriture : INGEST_TOKEN uniquement. */
   const requireToken = bearerAuth(deps.ingestToken);
   /** Lecture protégée : READ_TOKEN ou INGEST_TOKEN. */

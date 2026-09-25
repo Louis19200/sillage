@@ -79,6 +79,7 @@ const build = await new Promise<{ status: number | null; stdout: string }>((done
 check("build (migrations + bundle) réussi", build.status === 0);
 check("migration 001 appliquée pendant le build", /migration appliquée : 001_/.test(build.stdout));
 check("migration 002 (alertes, phase 7) appliquée pendant le build", /migration appliquée : 002_/.test(build.stdout));
+check("migration 004 (contexte, phase 8) appliquée pendant le build", /migration appliquée : 004_/.test(build.stdout));
 if (build.status !== 0) {
   await pgServer.stop();
   process.exit(1);

@@ -1,7 +1,7 @@
 # Contrat de l'API
 
 Source de vérité des types : [`packages/shared/src/index.ts`](../packages/shared/src/index.ts).
-Schéma SQL : [`api/db/migrations/001_daily_metrics.sql`](../api/db/migrations/001_daily_metrics.sql).
+Schéma SQL : [`api/db/migrations/001_daily_metrics.sql`](../api/db/migrations/001_daily_metrics.sql), contexte de la journée : [`004_weather_location.sql`](../api/db/migrations/004_weather_location.sql) (types : [`packages/shared/src/context.ts`](../packages/shared/src/context.ts)).
 
 ## Règles non négociables
 
@@ -42,12 +42,47 @@ curl -X POST localhost:8787/ingest/health \
        "sleep_start":"2026-09-22T23:48:00+02:00","sleep_end":"2026-09-23T06:40:00+02:00"}]}'
 ```
 
+### `POST /ingest/location` 🔒 (phase 8)
+Position quotidienne envoyée par le téléphone. Corps : `LocationIngestBody` = `{ "days": LocationDay[] }` (1 à 400 jours), `LocationDay` = `{ "date": "YYYY-MM-DD", "lat": number, "lon": number }` (date locale résolue sur le téléphone ; `lat` ∈ [-90, 90], `lon` ∈ [-180, 180] ; tout autre champ est refusé).
+Le serveur **arrondit à 2 décimales** (~1 km) avant d'écrire et ne stocke jamais plus précis (colonnes `numeric(…, 2)`). Upsert sur `date` : renvoyer une journée remplace sa position. Aucune coordonnée dans `ingest_log` (source `location`) ni dans les journaux.
+Réponse `200` : `{ "upserted": number }`. `400` avec `issues` (chemins et messages, jamais les valeurs reçues). `401` sans `INGEST_TOKEN` (le `READ_TOKEN` ne suffit pas).
+
+```bash
+curl -X POST localhost:8787/ingest/location \
+  -H "Authorization: Bearer $INGEST_TOKEN" -H "Content-Type: application/json" \
+  -d '{"days":[{"date":"2026-09-23","lat":48.8566,"lon":2.3522}]}'
+```
+
 ### `GET /day/:date`
-Réponse `200` : `DailyMetrics`. `404` si la journée n'existe pas. `400` si la date est invalide.
+Réponse `200` : `DailyMetrics` + `context` (voir « Contexte de la journée »). `404` si la journée n'existe pas. `400` si la date est invalide.
 
 ### `GET /range?from=YYYY-MM-DD&to=YYYY-MM-DD`
 Bornes incluses, `from <= to`, au plus `MAX_RANGE_DAYS` jours.
-Réponse `200` : `RangeResponse` (seuls les jours présents en base, triés). Les jours absents ne sont **pas** inventés : c'est au client de les traiter comme manquants.
+Réponse `200` : `RangeResponse` (seuls les jours présents en base, triés), chaque journée avec son `context`. Les jours absents ne sont **pas** inventés : c'est au client de les traiter comme manquants.
+
+### Contexte de la journée : champ `context` (phase 8)
+`GET /day/:date` et `GET /range` ajoutent à chaque journée un champ **`context`** : un objet `DayContext`, ou `null` si rien n'est encore stocké pour ce jour. Champ additif : un client qui l'ignore (schéma `DailyMetrics`) continue de fonctionner ; schémas complets : `DailyMetricsWithContext`, `RangeWithContextResponse`. Il n'apparaît que sur les réponses `200`.
+
+```jsonc
+"context": {
+  "location_source": "home",      // "phone" | "home" | null : provenance de la position utilisée
+  "temp_min": 12.3, "temp_max": 24.6,  // °C, au dixième
+  "precip_mm": 0,                 // cumul, mm (0 = vraiment sec)
+  "wind_max_kmh": 10.1,           // vent max à 10 m
+  "wind_dir_deg": 101,            // direction dominante (d'où vient le vent), 0–360
+  "cloud_mean": 12,               // couverture nuageuse moyenne, %
+  "sunshine_min": 669,            // ensoleillement, minutes
+  "sunrise": "07:39", "sunset": "19:52",  // heure locale du lieu, HH:MM
+  "weather_code": 1,              // code météo WMO 0–99
+  "kp_max": 2.333,                // Kp maximal de la journée locale (0–9, par tiers)
+  "updated_at": "2026-09-25T02:45:12.000Z"
+}
+```
+- Chaque valeur peut être `null` (source pas encore synchronisée, archive en retard, tranche Kp non publiée) ; `null` n'est jamais `0`.
+- **Les coordonnées ne sont jamais renvoyées en lecture** (le `READ_TOKEN` finit dans le bundle public de la page d'art) : seule `location_source` l'est.
+- Météo : Open-Meteo, agrégée sur le jour local **du lieu** (`timezone=auto`) ; position du jour envoyée par le téléphone, sinon « maison » (`HOME_LAT` / `HOME_LON`).
+- Kp : GFZ Potsdam, maximum des tranches de 3 h qui recouvrent la journée locale dans `CONTEXT_TZ` (défaut `Europe/Paris`), écrit seulement quand toutes ces tranches sont publiées.
+- Phase de lune : pas stockée ; `moonPhase(date)` de `@sillage/shared` (`{ phase, illumination, age_days, waxing }`, évaluée à 12:00 UTC).
 
 ### `GET /cron/:name` 🔒 `CRON_SECRET`
 Exécute la tâche enregistrée sous `name` dans le registre de `api/src/jobs.ts` (`registerJob`). C'est ainsi que les **Vercel Cron Jobs** déclenchent les tâches (ils envoient `Authorization: Bearer <CRON_SECRET>` d'eux-mêmes) ; node-cron (`ENABLE_JOBS`) ne sert qu'en local. L'horaire vit dans `vercel.json`, pas dans l'expression passée à `registerJob`.
@@ -60,6 +95,8 @@ Exécute la tâche enregistrée sous `name` dans le registre de `api/src/jobs.ts
 ```bash
 curl localhost:8787/cron/github-sync -H "Authorization: Bearer $CRON_SECRET"
 ```
+
+Tâche `context-sync` (phase 8) : météo et Kp des 7 dernières journées complètes (hier et avant, dans `CONTEXT_TZ`), plus au plus 60 journées dont la position du téléphone est arrivée après le calcul de leur météo. `result` = `{ from, to, weather: { source, days_requested, days_written, days_empty, requests, first_date, last_date }, kp: { source, days_requested, days_written, first_date, last_date } }` ; `500` si la météo ou le Kp échoue (l'autre est quand même écrit).
 
 ### `GET /health` (phase 7)
 `200 { "status": "ok", "db": "ok", "last_ingest": { "health": iso|null, "github": iso|null } }`, `503` si la base est injoignable.

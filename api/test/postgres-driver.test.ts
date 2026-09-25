@@ -7,7 +7,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { PGLiteSocketServer } from "@electric-sql/pglite-socket";
 import { createDb, createPostgresClient, postgresExecutor, type Db } from "../src/db";
-import { migrate } from "../src/migrate";
+import { readdirSync } from "node:fs";
+import { MIGRATIONS_DIR, migrate } from "../src/migrate";
 import { createApp } from "../src/app";
 import { TEST_TOKEN } from "./helpers";
 
@@ -33,7 +34,9 @@ afterAll(async () => {
 
 describe("driver postgres", () => {
   it("applique les migrations une seule fois", async () => {
-    expect(await migrate(db.executor)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql"]);
+    const all = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
+    expect(all.slice(0, 2)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql"]);
+    expect(await migrate(db.executor)).toEqual(all);
     expect(await migrate(db.executor)).toEqual([]);
   });
 

@@ -72,3 +72,23 @@ export const AUTH_HEADER = "authorization"; // valeur : `Bearer <INGEST_TOKEN>`
 
 /** Limite de `GET /range`, pour éviter les requêtes démesurées. */
 export const MAX_RANGE_DAYS = 800;
+
+// --- Phase 8 : contexte de la journée (météo, position, Kp, lune) ------------
+// Additif : voir packages/shared/src/context.ts et docs/API.md.
+export * from "./context";
+import { DayContext } from "./context";
+
+/**
+ * Journée renvoyée par `GET /day/:date` et `GET /range` : `DailyMetrics` plus
+ * `context` (objet, ou `null` si aucun contexte n'est encore stocké pour ce jour).
+ * Champ optionnel : un client qui l'ignore continue de fonctionner.
+ */
+export const DailyMetricsWithContext = DailyMetrics.extend({
+  context: DayContext.nullable().optional(),
+});
+export type DailyMetricsWithContext = z.infer<typeof DailyMetricsWithContext>;
+
+export const RangeWithContextResponse = RangeResponse.extend({
+  days: z.array(DailyMetricsWithContext),
+});
+export type RangeWithContextResponse = z.infer<typeof RangeWithContextResponse>;
