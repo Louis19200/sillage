@@ -125,32 +125,37 @@ migration appliquée : 001_daily_metrics.sql
 
 Ensuite, chaque push sur `main` redéploie la production ; chaque autre branche donne un déploiement *Preview* (sans migration).
 
-### 2.5 Vérifier avec curl
+### 2.5 Vérifier l'API
 
-```bash
-export API=https://sillage-api.vercel.app        # ton URL réelle
-export INGEST_TOKEN=...  READ_TOKEN=...          # depuis ton gestionnaire de mots de passe
+Depuis la racine du dépôt, sur ton poste (Windows, macOS ou Linux). Mets d'abord dans le `.env` à la racine l'URL de l'API et les mêmes secrets que sur Vercel :
 
-# HTTP redirigé vers HTTPS (308)
-curl -sI http://${API#https://}/range | head -3
-
-# Sans token : 401
-curl -si "$API/range?from=2026-09-01&to=2026-09-30" | head -1
-
-# Écriture d'une journée de test (INGEST_TOKEN)
-curl -s -X POST "$API/ingest/health" \
-  -H "Authorization: Bearer $INGEST_TOKEN" -H "Content-Type: application/json" \
-  -d '{"days":[{"date":"2026-09-23","steps":8421,"sleep_minutes":412}]}'
-# → {"upserted":1}
-
-# Lecture (READ_TOKEN ou INGEST_TOKEN)
-curl -s "$API/range?from=2026-09-01&to=2026-09-30" -H "Authorization: Bearer $READ_TOKEN"
-# → {"from":"2026-09-01","to":"2026-09-30","days":[{"date":"2026-09-23","steps":8421,...}]}
+```
+API_URL=https://sillage-api.vercel.app
+INGEST_TOKEN=...
+READ_TOKEN=...
+CRON_SECRET=...
 ```
 
-Si curl reçoit une page HTML « Vercel Authentication » : *Settings → Deployment Protection*, la protection ne doit concerner que les *Preview* (réglage par défaut « Standard Protection »), pas le domaine de production.
+Puis :
 
-Pour effacer la journée de test : renvoie-la avec des `null`, ou attends la vraie synchro du téléphone qui l'écrasera.
+```
+pnpm --filter api check:prod
+```
+
+La commande vérifie la redirection HTTP → HTTPS, le refus sans token, chaque token (lecture, écriture, cron) et affiche combien de journées la base contient sur les 30 derniers jours. **Elle n'écrit rien** : l'écriture est testée avec un corps volontairement invalide (400 attendu), et le cron avec une tâche inexistante (404 attendu). En cas d'échec, chaque ligne dit quoi corriger.
+
+Rappel : après avoir ajouté ou modifié une variable sur Vercel, il faut **redéployer** (*Deployments → ⋯ → Redeploy*) pour qu'elle soit prise en compte.
+
+<details><summary>À la main, dans PowerShell</summary>
+
+Dans PowerShell, `curl` n'est pas le vrai curl : utilise `Invoke-RestMethod`.
+
+```powershell
+$API = "https://sillage-api.vercel.app"
+$READ = "colle-ici-READ_TOKEN"
+Invoke-RestMethod "$API/range?from=2026-09-01&to=2026-09-30" -Headers @{ Authorization = "Bearer $READ" }
+```
+</details>
 
 ## 3. Cron GitHub
 
