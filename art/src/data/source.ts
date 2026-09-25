@@ -9,4 +9,9 @@ export interface DataSource {
   getRange(from: string, to: string): Promise<DailyMetrics[]>;
   /** Date affichée quand la page est ouverte sans `?date=`. */
   defaultDate(): Promise<string>;
+  /**
+   * Premier jour de l'historique, si la source le connaît sans tout charger (fixtures).
+   * Moteur v2 : sans style figé, la chaîne de sélection doit partir de ce jour.
+   */
+  firstDate?(): Promise<string | null>;
 }

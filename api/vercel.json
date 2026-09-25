@@ -5,6 +5,7 @@
   "crons": [
     { "path": "/cron/github-sync", "schedule": "15 2 * * *" },
     { "path": "/cron/check-freshness", "schedule": "5 7 * * *" },
-    { "path": "/cron/context-sync", "schedule": "45 2 * * *" }
+    { "path": "/cron/context-sync", "schedule": "45 2 * * *" },
+    { "path": "/cron/freeze-styles", "schedule": "30 3 * * *" }
   ]
 }

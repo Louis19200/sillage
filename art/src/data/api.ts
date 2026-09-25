@@ -1,4 +1,4 @@
-import { DailyMetrics, RangeResponse } from "@sillage/shared";
+import { DailyMetricsWithContext, RangeWithContextResponse } from "@sillage/shared";
 import type { DataSource } from "./source";
 
 export interface ApiSourceOptions {
@@ -39,13 +39,13 @@ export function createApiSource(options: ApiSourceOptions): DataSource {
     async getDay(date) {
       const res = await get(`/day/${encodeURIComponent(date)}`);
       if (res.status === 404) return null;
-      return DailyMetrics.parse(await res.json());
+      return DailyMetricsWithContext.parse(await res.json());
     },
     async getRange(from, to) {
       const qs = new URLSearchParams({ from, to }).toString();
       const res = await get(`/range?${qs}`);
       if (res.status === 404) return [];
-      return RangeResponse.parse(await res.json()).days;
+      return RangeWithContextResponse.parse(await res.json()).days;
     },
     defaultDate: async () => (options.today ?? localYesterday)(),
   };

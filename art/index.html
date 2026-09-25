@@ -6,6 +6,8 @@
     <title>Sillage</title>
     <link rel="stylesheet" href="/src/pages/day/day.css" />
     <link rel="stylesheet" href="/src/export/export.css" />
+    <link rel="stylesheet" href="/src/pages/day/fiche.css" />
+    <link rel="stylesheet" href="/src/pages/engine-switch.css" />
   </head>
   <body>
     <main class="day">
@@ -17,11 +19,14 @@
       <figure class="day__frame">
         <div class="day__art" id="art"></div>
       </figure>
+      <p class="technique" id="technique" hidden></p>
       <dl class="day__legend" id="legend"></dl>
       <div class="tools">
         <div id="export"></div>
         <a class="tools__link" id="gallery" href="/gallery/" title="Toutes les œuvres, par mois et par année">galerie</a>
+        <span id="engine"></span>
       </div>
+      <div class="day__fiche" id="fiche"></div>
       <p class="day__source" id="source"></p>
     </main>
     <script type="module" src="/src/pages/day/main.ts"></script>

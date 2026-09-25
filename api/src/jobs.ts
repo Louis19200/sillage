@@ -89,5 +89,6 @@ export function clearJobs(): void {
 // --- Enregistrements (une ligne par agent) ----------------------------------
 // ex. github-collector : registerJob("github-sync", "15 4 * * *", () => syncGithub(last7Days()));
 registerJob("github-sync", "15 4 * * *", () => import("./collectors/github/sync").then((m) => m.runGithubSyncJob()), { timezone: "Europe/Paris" });
+registerJob("freeze-styles", "30 5 * * *", () => import("./artworks").then((m) => m.runFreezeStylesJob()), { timezone: "Europe/Paris" }); // moteur v2 ; Vercel : 30 3 * * * UTC
 registerJob("check-freshness", "5 * * * *", () => import("./ops/freshness").then((m) => m.runFreshnessJob())); // Vercel : 1×/jour (vercel.json)
 registerJob("context-sync", "45 4 * * *", () => import("./context/sync").then((m) => m.runContextSyncJob()), { timezone: "Europe/Paris" }); // extensions : météo + Kp, 7 derniers jours

@@ -79,6 +79,7 @@ const build = await new Promise<{ status: number | null; stdout: string }>((done
 check("build (migrations + bundle) réussi", build.status === 0);
 check("migration 001 appliquée pendant le build", /migration appliquée : 001_/.test(build.stdout));
 check("migration 002 (alertes, phase 7) appliquée pendant le build", /migration appliquée : 002_/.test(build.stdout));
+check("migration 003 (styles figés, moteur v2) appliquée pendant le build", /migration appliquée : 003_/.test(build.stdout));
 check("migration 004 (contexte, phase 8) appliquée pendant le build", /migration appliquée : 004_/.test(build.stdout));
 if (build.status !== 0) {
   await pgServer.stop();
@@ -169,6 +170,30 @@ check(
     JSON.stringify(freshnessBody.result?.checks?.map((c) => [c.source, c.action])) === JSON.stringify([["health", "initialized"], ["github", "alerted"]]),
   freshnessBody,
 );
+
+// Moteur v2 : gel des styles (le 2026-09-23 a moins de 3 jours → rien à figer), puis un jour ancien.
+await fetch(`${base}/ingest/health`, {
+  method: "POST",
+  headers: { ...auth, "content-type": "application/json" },
+  body: JSON.stringify({ days: [{ date: "2020-01-02", steps: 4321 }] }),
+});
+// Sans FREEZE_STYLES=true, le gel ne fait rien (il attend le backfill météo).
+const notYet = await fetch(`${base}/cron/freeze-styles`, { headers: { authorization: `Bearer ${CRON}` } });
+check(
+  "GET /cron/freeze-styles sans FREEZE_STYLES → 200, rien de figé",
+  notYet.status === 200 && JSON.stringify(await notYet.json()).includes("skipped"),
+);
+process.env.FREEZE_STYLES = "true";
+const freeze = await fetch(`${base}/cron/freeze-styles`, { headers: { authorization: `Bearer ${CRON}` } });
+const freezeBody = (await freeze.json()) as { ok?: boolean; result?: { frozen?: number; origin?: string } };
+check(
+  "GET /cron/freeze-styles avec CRON_SECRET → 200, historique figé depuis l'origine",
+  freeze.status === 200 && freezeBody.ok === true && freezeBody.result?.origin === "2020-01-02" && (freezeBody.result?.frozen ?? 0) > 2000,
+  freezeBody,
+);
+const styled = await fetch(`${base}/day/2020-01-02`, { headers: auth });
+const styledBody = (await styled.json()) as { style?: string; style_explain?: { frozen_at?: string } };
+check("GET /day d'un jour figé → style et style_explain", typeof styledBody.style === "string" && typeof styledBody.style_explain?.frozen_at === "string", styledBody);
 
 const health = await fetch(`${base}/health`);
 const healthBody = (await health.json()) as { status?: string; db?: string; last_ingest?: Record<string, string | null> };

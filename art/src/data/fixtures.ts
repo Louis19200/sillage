@@ -14,5 +14,6 @@ export function createFixturesSource(raw: unknown = rawDays): DataSource {
     getDay: async (date) => byDate.get(date) ?? null,
     getRange: async (from, to) => days.filter((d) => d.date >= from && d.date <= to),
     defaultDate: async () => days.at(-1)?.date ?? "2026-09-23",
+    firstDate: async () => days[0]?.date ?? null,
   };
 }

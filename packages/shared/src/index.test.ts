@@ -21,3 +21,16 @@ test("les fixtures respectent le contrat", () => {
   for (const d of raw) DailyMetrics.parse(d);
   assert.ok(raw.length >= 60);
 });
+
+test("DailyMetrics : style et style_explain sont optionnels (ajout additif, moteur v2)", () => {
+  const base = { date: "2026-09-23", steps: 1, sleep_minutes: null, sleep_start: null, sleep_end: null, commits: 0, updated_at: "2026-09-24T06:00:00+02:00" };
+  assert.equal(DailyMetrics.safeParse(base).success, true);
+  const frozen = DailyMetrics.parse({
+    ...base,
+    style: "vitrail",
+    style_explain: { selection_version: 1, style: "vitrail", frozen_at: "2026-09-26T03:30:00.000Z", engine_version: "v2", point: 3.2 },
+  });
+  assert.equal(frozen.style, "vitrail");
+  assert.equal((frozen.style_explain as { point?: number }).point, 3.2); // le détail passe tel quel
+  assert.equal(DailyMetrics.safeParse({ ...base, style: "aquarelle" }).success, false);
+});

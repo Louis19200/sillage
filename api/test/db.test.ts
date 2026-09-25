@@ -26,9 +26,9 @@ describe("migrate", () => {
   it("est idempotent et trace les migrations", async () => {
     expect(await migrate(db.executor)).toEqual([]);
     const rows = await db.executor.query<{ name: string }>("SELECT name FROM schema_migrations");
-    // Toutes les migrations du dossier, dans l'ordre (chaque zone ajoute la sienne : 001, 002, 004…).
+    // Toutes les migrations du dossier, dans l'ordre (chaque zone ajoute la sienne : 001 à 004…).
     const all = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort();
-    expect(all).toEqual(expect.arrayContaining(["001_daily_metrics.sql", "002_ops_alert_state.sql", "004_weather_location.sql"]));
+    expect(all).toEqual(expect.arrayContaining(["001_daily_metrics.sql", "002_ops_alert_state.sql", "003_artworks.sql", "004_weather_location.sql"]));
     expect(rows.map((r) => r.name).sort()).toEqual(all);
   });
 });

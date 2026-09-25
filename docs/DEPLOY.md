@@ -443,6 +443,18 @@ Chaque ingestion et chaque tâche écrivent **une ligne JSON** dans *Logs* (proj
 
 Événements : `ingest` (source, jours, durée, succès ou message d'erreur court), `job` (chaque `/cron/:name` exécuté), `freshness` (un par source et par contrôle), `health` (base injoignable), `alert` (sans ntfy), `notifier_missing`. Jamais de token, de corps de requête ni de valeur de santé : des compteurs, des durées et des messages d'erreur tronqués, où ce qui ressemble à un token est masqué. Vercel Hobby ne garde ces journaux que peu de temps ; l'historique durable reste `ingest_log` en base.
 
+## 13. Moteur v2 : météo puis gel des styles
+
+L'ordre compte, car le gel est définitif et le nombre clé inclut la température quand elle existe :
+
+1. Projet API sur Vercel : `HOME_LAT` et `HOME_LON` (ville « maison », arrondies à 2 décimales), puis Redeploy.
+2. Sur ton poste : `npx pnpm@10.33.0 --filter api context:backfill` (météo et Kp depuis le premier jour de données).
+3. Projet API sur Vercel : `FREEZE_STYLES=true`, puis Redeploy.
+4. Premier gel sans attendre la nuit : Settings → Cron Jobs → `/cron/freeze-styles` → Run. Tous les jours de plus de 3 jours sont figés ; ensuite la tâche de 3 h 30 UTC fige chaque nouveau jour.
+5. Vérifier : `GET /day/<une date de 2024>` renvoie `style` et `style_explain`.
+
+Tant que `FREEZE_STYLES` n'est pas à `true`, la page d'art calcule les styles à la volée (même règle) : rien n'est figé, rien ne casse.
+
 ## Tout refaire depuis zéro : la liste
 
 1. Secrets générés (section 1).

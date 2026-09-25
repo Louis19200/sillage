@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sillage · galerie</title>
     <link rel="stylesheet" href="/src/pages/gallery/gallery.css" />
+    <link rel="stylesheet" href="/src/pages/engine-switch.css" />
+    <link rel="stylesheet" href="/src/pages/gallery/gallery-v2.css" />
   </head>
   <body>
     <main class="gallery" id="gallery">
@@ -14,9 +16,11 @@
           <a id="view-month" href="#">mois</a>
           <a id="view-year" href="#">année</a>
         </nav>
+        <span id="engine"></span>
       </header>
       <div class="gallery__nav" id="nav"></div>
       <p class="gallery__summary" id="summary"></p>
+      <div class="techniques" id="techniques"></div>
       <section class="gallery__body" id="body" aria-live="polite"></section>
       <footer class="gallery__footer">
         <span class="gallery__key"><span class="key__nodata" aria-hidden="true"></span>sans données</span>
