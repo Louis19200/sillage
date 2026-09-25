@@ -10,6 +10,12 @@ ces 7 jours (« Synchroniser ») ou 30 jours (« Backfill 30 jours ») à `POST 
 Depuis l'étape 6, une tâche de fond envoie chaque matin les 3 dernières journées complètes,
 et l'app rattrape à l'ouverture si la tâche n'a pas pu passer (voir « Synchro automatique »).
 
+> **Reconstruire l'APK (position pour la météo).** L'option « Envoyer ma position
+> approximative » ajoute un module natif (`expo-location`) et la permission
+> `ACCESS_COARSE_LOCATION`. Un APK construit avant ne les contient pas : relance
+> `npx eas-cli@latest build --profile preview --platform android` et réinstalle par-dessus.
+> Voir « Position pour la météo » plus bas.
+
 > **Reconstruire l'APK (étape 6).** L'étape 6 ajoute du code natif (`expo-background-task`,
 > `expo-task-manager`, le module local `modules/sillage-device`) et une permission
 > (`READ_HEALTH_DATA_IN_BACKGROUND`). Un APK construit avant ne les contient pas : relance
@@ -30,11 +36,13 @@ et l'app rattrape à l'ouverture si la tâche n'a pas pu passer (voir « Synchro
 | `src/background.ts` | Étape 6, module pur : faut-il synchroniser (`needsDailySync`, `shouldSyncOnOpen`), corps de la tâche de fond (`runBackgroundTask`, ne lève jamais), texte d'état (`describeAutoSync`). Testé avec jest. |
 | `src/backgroundTask.ts` | Étape 6, câblage : `TaskManager.defineTask` (importé par `index.ts` avant tout), enregistrement WorkManager toutes les 3 h environ. |
 | `modules/sillage-device/` | Module natif local (Kotlin, lecture seule) : disponibilité de la lecture en arrière-plan dans Health Connect (`getFeatureStatus`), optimisation et restriction de batterie. Absent de l'APK → « inconnu », sans planter. |
+| `src/location.ts` | Position quotidienne pour la météo, module pur testé avec jest : arrondi à 2 décimales, une position par journée locale, sélection des jours à envoyer (≤ 30, jamais aujourd'hui), envoi à `POST /ingest/location` (404 = « route pas encore disponible »), textes d'état et de diagnostic sans coordonnées. |
+| `src/locationDevice.ts` | Câblage réel : permission `ACCESS_COARSE_LOCATION` (`PermissionsAndroid`), capteur `expo-location`, état dans `expo-secure-store`. |
 | `src/settings.ts` | Câblage réel : URL, token et dernière synchro dans `expo-secure-store`. |
 | `src/screens/SettingsScreen.tsx` | URL de l'API et `INGEST_TOKEN` (masqué, jamais réaffiché). |
 | `src/screens/SyncPanel.tsx` | Boutons « Synchroniser (7 jours) » et « Backfill 30 jours », dernière tentative et dernière réussite ; état de la synchro automatique, dernier passage en arrière-plan, repli à l'ouverture. |
 | `scripts/check-api.ts` | Envoie 30 journées produites par un faux Health Connect à une vraie API et les relit. |
-| `app.json` | Plugins Health Connect et `expo-background-task`, `minSdkVersion` 26, permissions `READ_STEPS`, `READ_SLEEP` et `READ_HEALTH_DATA_IN_BACKGROUND`. |
+| `app.json` | Plugins Health Connect et `expo-background-task`, `minSdkVersion` 26, permissions `READ_STEPS`, `READ_SLEEP`, `READ_HEALTH_DATA_IN_BACKGROUND` et `ACCESS_COARSE_LOCATION` ; position exacte et en arrière-plan bloquées (`blockedPermissions`). |
 | `eas.json` | Profils `development` (client de développement) et `preview` (APK autonome, usage quotidien). |
 | `metro.config.js` | Monorepo : surveille la racine, résout les modules depuis `app/` puis la racine. |
 
@@ -335,6 +343,44 @@ Pour forcer un passage sans attendre (téléphone en USB, débogage activé, Sil
 adb shell dumpsys jobscheduler | grep -A2 "app.sillage"    # repère le numéro du job (#u0a…/NN)
 adb shell cmd jobscheduler run -f app.sillage NN
 ```
+
+## Position pour la météo (moteur v2)
+
+Option **désactivée par défaut**. Pour l'activer : tableau des 7 jours → **Réglages (URL,
+token)** → en bas, interrupteur **« Envoyer ma position approximative (pour la météo) »**.
+Android demande alors la **position approximative** seulement (pas la position exacte).
+
+Ce que fait l'app, et ce qu'elle ne fait pas :
+
+- La position est **arrondie à 2 décimales (~1 km) sur le téléphone**, avant d'être
+  mémorisée ou envoyée : aucune coordonnée plus précise n'est jamais stockée ni transmise.
+- **Une seule position par journée locale** (la dernière relevée ce jour-là), jamais de trajet.
+  Elle est relevée au moment d'une synchro (bouton, ouverture de l'app, tâche de fond) ;
+  la tâche de fond n'allume pas le GPS et prend la dernière position connue du téléphone
+  (moins de 12 h), qui peut manquer : l'ouverture de l'app comble alors le trou.
+- La position du jour part **une fois la journée finie** (comme la santé, jamais aujourd'hui),
+  avec la synchro suivante, après l'envoi santé : au plus 30 journées en attente par envoi,
+  en un seul `POST /ingest/location`. Une fois acceptée, elle est **effacée du téléphone**.
+- Désactiver l'option efface toutes les positions encore sur le téléphone.
+- Aucune coordonnée dans les messages, l'état mémorisé ou le diagnostic : seulement des dates.
+- Pas de localisation en arrière-plan : le manifeste ne déclare que `ACCESS_COARSE_LOCATION`
+  (`ACCESS_FINE_LOCATION`, `ACCESS_BACKGROUND_LOCATION` et `FOREGROUND_SERVICE_LOCATION`
+  sont retirés par `android.blockedPermissions` dans `app.json`).
+
+Le panneau de synchro affiche « Position : envoyée / désactivée / route pas encore
+disponible… ». Si l'API ne connaît pas encore `/ingest/location` (404), la synchro santé
+n'échoue pas : les positions restent sur le téléphone et partent quand la route existe.
+
+À tester sur le téléphone, après avoir reconstruit l'APK (profil `preview`) :
+
+1. Réglages → activer l'interrupteur → Android propose « Position approximative » :
+   accepter. Le message dit « Position du AAAA-MM-JJ mémorisée ».
+2. Diagnostic : « Position (météo) : activée ; permission : accordée (approximative) »,
+   « Dernière position mémorisée : <date> », sans coordonnées.
+3. Le lendemain, Synchroniser : « Position : envoyée (<hier>) » (ou « route pas encore
+   disponible » si l'API n'est pas à jour). Vérifier en base que `lat`/`lon` ont 2 décimales.
+4. Désactiver l'interrupteur : « positions effacées », et la synchro suivante n'appelle
+   plus `/ingest/location` (« Position : désactivée »).
 
 ## pnpm et Expo
 

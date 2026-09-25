@@ -9,6 +9,7 @@ import { ingestHealthDays, type FetchLike, type IngestErrorKind } from "./api";
 import type { HealthDay } from "@sillage/shared";
 
 import { computeLastCompleteDays, type ComputedHealthDay, type HealthReader, type LocalDate } from "./days";
+import { runLocationSync, type LocationDeps, type LocationRun } from "./location";
 
 /** Bouton « Synchroniser » : les 7 dernières journées complètes (hier compris). */
 export const SYNC_DAYS = 7;
@@ -62,9 +63,16 @@ export interface SyncState {
   lastSuccess: SyncRecord | null;
   /** Absent des états enregistrés avant l'étape 6 : relu comme `null`. */
   lastBackground: BackgroundRun | null;
+  /** Étape « position » de la dernière synchro (sans coordonnées) ; `null` avant la première. */
+  lastLocation: LocationRun | null;
 }
 
-export const EMPTY_SYNC_STATE: SyncState = { lastAttempt: null, lastSuccess: null, lastBackground: null };
+export const EMPTY_SYNC_STATE: SyncState = {
+  lastAttempt: null,
+  lastSuccess: null,
+  lastBackground: null,
+  lastLocation: null,
+};
 
 export interface Settings {
   apiUrl: string;
@@ -79,6 +87,11 @@ export interface SyncDeps {
   saveState(state: SyncState): Promise<void>;
   now?: () => Date;
   timeoutMs?: number;
+  /**
+   * Position quotidienne arrondie (météo), envoyée après la santé. Absente : étape sautée.
+   * Son résultat n'influe jamais sur celui de la synchro santé.
+   */
+  location?: LocationDeps;
 }
 
 /**
@@ -195,12 +208,33 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
     };
   }
 
+  // Après la santé, quel qu'en soit le résultat : la position a sa propre route.
+  let lastLocation: LocationRun | null = null;
+  if (deps.location) {
+    try {
+      lastLocation = await runLocationSync(
+        {
+          location: deps.location,
+          fetch: deps.fetch,
+          loadSettings: deps.loadSettings,
+          ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
+        },
+        // Tâche de fond : dernière position connue, sans allumer le GPS.
+        kind === "background" ? "last-known" : "current",
+        now
+      );
+    } catch {
+      // runLocationSync ne lève pas ; la synchro santé ne doit de toute façon pas en pâtir.
+    }
+  }
+
   try {
     const previous = await deps.loadState();
     await deps.saveState({
       ...previous,
       lastAttempt: record,
       lastSuccess: record.ok ? record : previous.lastSuccess,
+      ...(lastLocation ? { lastLocation } : {}),
     });
   } catch {
     // Ne pas masquer le résultat de la synchro parce que la mémorisation a échoué.
@@ -219,6 +253,7 @@ export function parseSyncState(raw: string | null): SyncState {
       lastAttempt: isRecord(v.lastAttempt) ? v.lastAttempt : null,
       lastSuccess: isRecord(v.lastSuccess) ? v.lastSuccess : null,
       lastBackground: isBackgroundRun(v.lastBackground) ? v.lastBackground : null,
+      lastLocation: isLocationRun(v.lastLocation) ? v.lastLocation : null,
     };
   } catch {
     return empty;
@@ -243,5 +278,25 @@ function isBackgroundRun(v: unknown): v is BackgroundRun {
     typeof (v as BackgroundRun).at === "string" &&
     typeof (v as BackgroundRun).message === "string" &&
     ["sent", "failed", "skipped"].includes((v as BackgroundRun).outcome)
+  );
+}
+
+const LOCATION_OUTCOMES: readonly LocationRun["outcome"][] = [
+  "sent",
+  "disabled",
+  "unavailable",
+  "nothing",
+  "no-permission",
+  "failed",
+];
+
+function isLocationRun(v: unknown): v is LocationRun {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as LocationRun).at === "string" &&
+    typeof (v as LocationRun).message === "string" &&
+    typeof (v as LocationRun).days === "number" &&
+    LOCATION_OUTCOMES.includes((v as LocationRun).outcome)
   );
 }
