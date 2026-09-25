@@ -138,4 +138,4 @@ Config livrée, **mise en ligne à faire par toi** en suivant [docs/DEPLOY.md](D
 - `index.html` à la racine de `art/` est la page du jour ; la galerie pourra en faire une entrée Vite parmi d'autres.
 
 ### Import Samsung Health (hors phases)
-Health Connect ne reçoit les données de Samsung Health qu'à partir de leur connexion (constaté sur Galaxy Note 10+, Android 12). Historique récupéré par l'export « Télécharger mes données personnelles » : `pnpm --filter api samsung:import <dossier> [--send]` (voir api/README.md). Export de l'utilisateur : 2446 journées de pas (2019-07-05 → 2026-09-24), 492 nuits.
+Health Connect ne reçoit les données de Samsung Health qu'à partir de leur connexion (constaté sur Galaxy Note 10+, Android 12). Historique récupéré par l'export « Télécharger mes données personnelles » : `pnpm --filter api samsung:import <dossier> [--send]` (voir api/README.md). Export de l'utilisateur : 2446 journées de pas (2019-07-05 → 2026-09-24), 492 nuits. **Importé en production le 2026-09-25 (2446 journées).**
