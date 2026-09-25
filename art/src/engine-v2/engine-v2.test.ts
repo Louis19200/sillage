@@ -107,7 +107,7 @@ describe("entrée des techniques", () => {
       }
     }
     expect(ALL_TECHNIQUES.map((t) => t.id)).toEqual([...STYLES]);
-    expect(ALL_TECHNIQUES.filter((t) => t.ported).map((t) => t.id)).toEqual(expect.arrayContaining(["maree", "attracteur", "vitrail", "constructif", "hachures", "pixels", "corail", "harmonographe"]));
+    expect(ALL_TECHNIQUES.filter((t) => t.ported).map((t) => t.id)).toEqual(expect.arrayContaining(["maree", "attracteur", "vitrail", "constructif", "hachures", "pixels", "corail", "harmonographe", "pelage", "reseau"]));
   });
 });
 
