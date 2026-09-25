@@ -6,6 +6,8 @@
 import { STYLES, type StyleId } from "@sillage/shared";
 import type { Technique } from "../types";
 import { attracteur } from "./attracteur";
+import { corail } from "./corail";
+import { harmonographe } from "./harmonographe";
 import { maree } from "./maree";
 import { createPlaceholder } from "./placeholder";
 
@@ -13,8 +15,8 @@ export const TECHNIQUES: Record<StyleId, Technique> = {
   maree,
   attracteur,
   pelage: createPlaceholder("pelage", "organique", "Pelage", "réaction-diffusion (Gray-Scott)"),
-  corail: createPlaceholder("corail", "organique", "Corail", "croissance (colonisation de l'espace)"),
-  harmonographe: createPlaceholder("harmonographe", "mathematique", "Harmonographe", "courbe paramétrique amortie"),
+  corail,
+  harmonographe,
   vitrail: createPlaceholder("vitrail", "geometrique", "Vitrail", "géométrie (Voronoï)"),
   constructif: createPlaceholder("constructif", "geometrique", "Constructif", "composition géométrique à règles"),
   reseau: createPlaceholder("reseau", "organique", "Réseau", "vie artificielle (physarum)"),
