@@ -136,3 +136,6 @@ Config livrée, **mise en ligne à faire par toi** en suivant [docs/DEPLOY.md](D
 - La page lit `GET /range` (J-90 → J) plutôt que `/day/:date` (un seul appel suffit à J et à sa référence) ; `getDay` existe dans la source `api` pour la galerie.
 - Mode `api` validé contre un faux serveur seulement : l'API réelle devra autoriser l'origine de la page (CORS) pour `GET /range` avec l'en-tête `Authorization`. `VITE_API_TOKEN` finit dans le bundle client : n'y mettre qu'un jeton de **lecture**.
 - `index.html` à la racine de `art/` est la page du jour ; la galerie pourra en faire une entrée Vite parmi d'autres.
+
+### Import Samsung Health (hors phases)
+Health Connect ne reçoit les données de Samsung Health qu'à partir de leur connexion (constaté sur Galaxy Note 10+, Android 12). Historique récupéré par l'export « Télécharger mes données personnelles » : `pnpm --filter api samsung:import <dossier> [--send]` (voir api/README.md). Export de l'utilisateur : 2446 journées de pas (2019-07-05 → 2026-09-24), 492 nuits.

@@ -179,6 +179,29 @@ Enregistrée dans `src/jobs.ts` : tous les jours à 04:15 (Europe/Paris), les 7 
 - **Erreurs** : `401` → token absent, expiré ou révoqué ; `403` → permissions du token, ou limite de requêtes (heure de réinitialisation
   indiquée) ; `429` / `RATE_LIMITED` → limite de requêtes ; login inconnu → « utilisateur GitHub introuvable ».
 
+## Import de l'historique Samsung Health (`src/collectors/samsung-export/`)
+
+Health Connect ne voit que les données écrites après sa connexion à Samsung Health, et
+l'app ne peut lire que 30 jours en arrière. Pour récupérer tout l'historique :
+
+1. Sur le téléphone : Samsung Health → ⋮ → Paramètres → **Télécharger mes données
+   personnelles**. Copie le dossier obtenu sur ton PC.
+2. Aperçu (n'envoie rien) :
+   ```
+   npx pnpm@10.33.0 --filter api samsung:import "C:\chemin\du\dossier"
+   ```
+3. Import (`API_URL` et `INGEST_TOKEN` dans `.env`) :
+   ```
+   npx pnpm@10.33.0 --filter api samsung:import "C:\chemin\du\dossier" --send
+   ```
+
+Fichiers lus : `com.samsung.shealth.tracker.pedometer_day_summary.*.csv` (pas) et
+`com.samsung.shealth.sleep_combined.*.csv` (sommeil). Règles de calcul en tête de
+`parse.ts` : ligne « tous appareils » de Samsung pour les pas, nuit comptée le jour local
+du réveil, chevauchements comptés une fois, aujourd'hui exclu, valeur absente jamais
+envoyée. Idempotent ; ne touche jamais aux commits. Relancer avec un export plus récent
+met simplement les journées à jour.
+
 ## Tests
 
 ```bash

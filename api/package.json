@@ -12,6 +12,7 @@
     "test": "vitest run",
     "github:backfill": "tsx scripts/backfill-github.ts",
     "github:sync": "tsx scripts/backfill-github.ts --days 7",
+    "samsung:import": "tsx scripts/import-samsung.ts",
     "check:prod": "node scripts/check-prod.mjs",
     "vercel:check": "tsc -p api/tsconfig.json && tsx api/_smoke.ts"
   },
