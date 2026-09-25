@@ -1,8 +1,10 @@
 /**
  * Vérifie une API déployée, depuis n'importe quel système (Windows compris).
  *
- *   pnpm --filter api check:prod
- *   pnpm --filter api check:prod https://sillage-api.vercel.app
+ *   node api/scripts/check-prod.mjs
+ *   node api/scripts/check-prod.mjs https://sillage-api.vercel.app
+ *
+ * Aucune dépendance : il suffit de Node 22 ou plus (pas besoin de pnpm install).
  *
  * Variables lues dans l'environnement, `api/.env` ou `.env` à la racine :
  *   API_URL        URL de l'API (ou premier argument)
@@ -14,9 +16,16 @@
  * invalide (réponse 400 attendue), ce qui prouve que le token est accepté
  * sans toucher à tes vraies journées.
  */
-import { loadDotenvFiles } from "../src/env";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-loadDotenvFiles();
+// Même ordre que loadDotenvFiles() de src/env.ts : api/.env puis .env à la racine,
+// sans écraser les variables déjà définies.
+const here = dirname(fileURLToPath(import.meta.url));
+for (const p of [resolve(here, "../.env"), resolve(here, "../../.env")]) {
+  if (existsSync(p)) process.loadEnvFile(p);
+}
 
 const rawUrl = process.argv[2] ?? process.env.API_URL ?? "";
 const ingestToken = process.env.INGEST_TOKEN ?? "";
@@ -28,7 +37,7 @@ if (!/^https:\/\//.test(rawUrl) && !isLocal) {
   console.error(
     "API_URL manquante ou pas en https://. Ajoute dans .env une ligne\n" +
       "  API_URL=https://<ton-projet>.vercel.app\n" +
-      "ou passe l'URL en argument : pnpm --filter api check:prod https://<ton-projet>.vercel.app",
+      "ou passe l'URL en argument : node api/scripts/check-prod.mjs https://<ton-projet>.vercel.app",
   );
   process.exit(2);
 }
@@ -44,7 +53,7 @@ const to = today.toISOString().slice(0, 10);
 const rangePath = `/range?from=${from}&to=${to}`;
 
 let failures = 0;
-function report(ok: boolean, label: string, hint?: string): void {
+function report(ok, label, hint) {
   console.log(`${ok ? "ok  " : "ÉCHEC"} ${label}`);
   if (!ok) {
     failures++;
@@ -52,8 +61,10 @@ function report(ok: boolean, label: string, hint?: string): void {
   }
 }
 
-type Result = { status: number; body: string; type: string; location: string | null };
-async function call(path: string, init: RequestInit = {}, base = api): Promise<Result> {
+/** @typedef {{ status: number, body: string, type: string, location: string | null }} Result */
+
+/** @returns {Promise<Result>} */
+async function call(path, init = {}, base = api) {
   try {
     const res = await fetch(base + path, { redirect: "manual", signal: AbortSignal.timeout(20_000), ...init });
     return {
@@ -66,10 +77,11 @@ async function call(path: string, init: RequestInit = {}, base = api): Promise<R
     return { status: 0, body: String(err instanceof Error ? (err.cause ?? err.message) : err), type: "", location: null };
   }
 }
-const bearer = (t: string) => ({ authorization: `Bearer ${t}` });
+const bearer = (t) => ({ authorization: `Bearer ${t}` });
 
 /** Explication lisible des réponses qui ne viennent pas de l'API elle-même. */
-function diagnose(r: Result): string {
+/** @param {Result} r */
+function diagnose(r) {
   if (r.status === 0) return `API injoignable (${r.body}). Vérifie l'URL et ta connexion.`;
   if (r.type.includes("text/html") && r.status === 401)
     return "page de connexion Vercel : la « Deployment Protection » bloque l'accès. Utilise l'URL de production (Settings → Domains), ou désactive « Vercel Authentication » dans Settings → Deployment Protection.";
@@ -108,7 +120,7 @@ report(
 // 3. Lecture avec INGEST_TOKEN
 const readIngest = await call(rangePath, { headers: bearer(ingestToken) });
 let days = -1;
-if (readIngest.status === 200) days = (JSON.parse(readIngest.body) as { days: unknown[] }).days.length;
+if (readIngest.status === 200) days = JSON.parse(readIngest.body).days.length;
 report(
   readIngest.status === 200,
   `lecture avec INGEST_TOKEN (${days >= 0 ? `${days} jour(s) sur les 30 derniers` : "—"})`,

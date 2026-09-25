@@ -28,7 +28,7 @@ Compter une heure la première fois. Coût : **0 €** (Vercel Hobby + Neon Free
 ## 0. Ce qu'il faut avant de commencer
 
 - Le dépôt poussé sur GitHub (branche `main`).
-- Sur ton poste : Node 22, pnpm (`corepack enable`), `openssl` (sous Windows, voir l'encadré de la section 1), et pour la restauration `psql`/`pg_restore` (Postgres ≥ la version de Neon) et `gpg`.
+- Sur ton poste : Node 22, pnpm **10.33** (la version fixée par le dépôt ; sous Windows, si `pnpm` échoue avec « …\\.tools\\pnpm\\… n'est pas reconnu », lance-le via `npx pnpm@10.33.0 …`), `openssl` (sous Windows, voir l'encadré de la section 1), et pour la restauration `psql`/`pg_restore` (Postgres ≥ la version de Neon) et `gpg`.
 - La CLI Vercel (facultative mais pratique) : `npm i -g vercel`, puis `vercel login`.
 - La CLI GitHub `gh` (facultative) pour poser les secrets des sauvegardes.
 
@@ -136,11 +136,13 @@ READ_TOKEN=...
 CRON_SECRET=...
 ```
 
-Puis :
+Puis, depuis la racine du dépôt :
 
 ```
-pnpm --filter api check:prod
+node api/scripts/check-prod.mjs
 ```
+
+Le script n'a besoin que de Node 22 ou plus, sans `pnpm install` (`pnpm --filter api check:prod` fait la même chose si pnpm fonctionne chez toi).
 
 La commande vérifie la redirection HTTP → HTTPS, le refus sans token, chaque token (lecture, écriture, cron) et affiche combien de journées la base contient sur les 30 derniers jours. **Elle n'écrit rien** : l'écriture est testée avec un corps volontairement invalide (400 attendu), et le cron avec une tâche inexistante (404 attendu). En cas d'échec, chaque ligne dit quoi corriger.
 
