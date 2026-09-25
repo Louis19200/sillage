@@ -28,13 +28,22 @@ Compter une heure la première fois. Coût : **0 €** (Vercel Hobby + Neon Free
 ## 0. Ce qu'il faut avant de commencer
 
 - Le dépôt poussé sur GitHub (branche `main`).
-- Sur ton poste : Node 22, pnpm (`corepack enable`), `openssl`, et pour la restauration `psql`/`pg_restore` (Postgres ≥ la version de Neon) et `gpg`.
+- Sur ton poste : Node 22, pnpm (`corepack enable`), `openssl` (sous Windows, voir l'encadré de la section 1), et pour la restauration `psql`/`pg_restore` (Postgres ≥ la version de Neon) et `gpg`.
 - La CLI Vercel (facultative mais pratique) : `npm i -g vercel`, puis `vercel login`.
 - La CLI GitHub `gh` (facultative) pour poser les secrets des sauvegardes.
 
 ## 1. Générer les secrets (une fois, sur ton poste)
 
 Range chaque valeur dans ton gestionnaire de mots de passe : Vercel les masque ensuite.
+
+> **Windows (PowerShell), sans openssl.** Même générateur cryptographique, même format :
+> ```powershell
+> # équivalent de « openssl rand -hex 32 » (64 caractères hexadécimaux)
+> $b = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') })
+> # équivalent de « openssl rand -base64 32 »
+> $b = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); [Convert]::ToBase64String($b)
+> ```
+> Ou, avec Node (installé de toute façon pour pnpm) : `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
 
 | Nom | Commande | Sert à |
 |---|---|---|
