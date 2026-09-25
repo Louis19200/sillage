@@ -8,6 +8,8 @@ import type { Technique } from "../types";
 import { attracteur } from "./attracteur";
 import { maree } from "./maree";
 import { createPlaceholder } from "./placeholder";
+import { hachures } from "./hachures";
+import { pixels } from "./pixels";
 
 export const TECHNIQUES: Record<StyleId, Technique> = {
   maree,
@@ -18,8 +20,8 @@ export const TECHNIQUES: Record<StyleId, Technique> = {
   vitrail: createPlaceholder("vitrail", "geometrique", "Vitrail", "géométrie (Voronoï)"),
   constructif: createPlaceholder("constructif", "geometrique", "Constructif", "composition géométrique à règles"),
   reseau: createPlaceholder("reseau", "organique", "Réseau", "vie artificielle (physarum)"),
-  hachures: createPlaceholder("hachures", "geometrique", "Hachures", "art du tracé (plotter)"),
-  pixels: createPlaceholder("pixels", "numerique", "Pixels", "glitch (tri de pixels)"),
+  hachures,
+  pixels,
 };
 
 export function techniqueFor(style: StyleId): Technique {
