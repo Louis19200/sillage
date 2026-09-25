@@ -35,6 +35,7 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 **Terminé quand :** la journée d'hier arrive seule en base le matin.
 
 ## Phase 4 : déploiement (`deploy`)
+- [x] Configuration prête et vérifiée localement : fonction Vercel de l'API (bundle + migrations au build), `art/vercel.json`, crons dans `api/vercel.json`, CI et sauvegarde GitHub Actions, procédure docs/DEPLOY.md.
 - [ ] Backend en fonctions Vercel + Postgres Neon, page d'art sur Vercel (procédure dans docs/DEPLOY.md).
 - [ ] HTTPS obligatoire (Android bloque le HTTP en clair).
 - [ ] Secrets en variables d'environnement, sauvegarde automatique de la base.
@@ -106,6 +107,16 @@ Collecteur livré dans `api/src/collectors/github/` (voir la section « Collecte
 - Mémorisé dans SecureStore (`sillage.syncState`) : dernière tentative et dernière réussite (`SyncRecord` : instant, type, période, `upserted` ou erreur). L'étape 6 peut réutiliser `runSync` en ajoutant un type (3 jours) à `SyncKind`/`daysFor`, et le même état ; `SYNC_DAYS`/`BACKFILL_DAYS` sont dans `sync.ts`.
 - Le development build autorise le HTTP en clair (`usesCleartextTraffic` en debug) : `http://localhost:8787` via `adb reverse` fonctionne ; un APK de production exigera l'URL HTTPS de Vercel.
 - Reste : étape 6 (tâche quotidienne, `expo-background-task` ~57.0.20 selon `bundledNativeModules.json`).
+
+### Phase 4
+Config livrée, **mise en ligne à faire par toi** en suivant [docs/DEPLOY.md](DEPLOY.md) (liste « Tout refaire depuis zéro » à la fin). Les cases ci-dessus se cochent quand `curl https://<api>.vercel.app/range?…` répond avec le token et que le téléphone a synchronisé.
+- **Forme de la fonction** : ni `api/api/[[...route]].ts` ni le mode « zéro config » Hono. Le builder Node de Vercel transpile fichier par fichier sans regrouper ; l'API importe sans extension (`./db`) en ESM et `@sillage/shared` est en TypeScript, donc la fonction plantait au chargement (`Cannot find module …/src/app`, constaté avec `vercel build` 60.0.0). `api/api/_build.mjs` regroupe tout avec esbuild et écrit la sortie Build Output API v3 ; `vercel build --prod` hors ligne l'accepte et y ajoute les crons de `vercel.json`.
+- **Vérifié sans compte** : `pnpm --filter @sillage/api vercel:check` (build avec migrations sur PGlite, puis POST/GET/401/404 contre le fichier déployé) ; même essai à la main contre un vrai Postgres 16 (migrations par `DATABASE_URL_UNPOOLED`, échec de migration → build en échec) ; `vercel build --prod` des deux projets ; `actionlint` sur les deux workflows ; sauvegarde → chiffrement → restauration testée sur Postgres 16. **Non vérifié** : le routage réel de Vercel (d'où le paramètre `__path` de secours), le workflow de sauvegarde sur un runner GitHub, Neon lui-même.
+- **Dépend de api-backend** (en cours) : `GET /cron/:name`, `READ_TOKEN`, `CORS_ORIGINS`, `DATABASE_SERVERLESS`. `api/api/_app.ts` construit l'app exactement comme `src/server.ts` aujourd'hui (`createApp({ db, ingestToken, protectReads })`). **Si api-backend ajoute des dépendances à `createApp`** (jetons de lecture, secret cron, origines CORS…) au lieu de les lire dans l'environnement, reporter le même appel dans `buildFromEnv()` de `api/api/_app.ts` ; `vercel:check` le signalera par le typecheck.
+- **Dépend de github-collector** : tâche `github-sync` dans `jobs.ts` et script `github:backfill` (cités dans DEPLOY.md).
+- Hors zone, minimal : `esbuild` en devDependency et script `vercel:check` dans `api/package.json` ; `.vercel/` dans `.gitignore`.
+- **Test instable (generative-art)** : `art/src/engine/compose.test.ts` « deux dates différentes des fixtures… » dépasse ses 5 s quand `pnpm -r test` fait tourner les paquets en parallèle sur une machine chargée ; il passe seul. La CI utilise `--workspace-concurrency=1` ; à corriger côté art (délai du test ou fixtures plus légères).
+- Pas de variables deploy dans `.env.example` (`CRON_SECRET`, `DATABASE_URL_UNPOOLED`, `SILLAGE_MIGRATE`) : elles n'existent que sur Vercel, voir DEPLOY.md.
 
 ### Phase 5
 Œuvre « Sillage » : un courant de lignes (les sillages) traverse le cadre, dévié par des pierres, sous un astre. Aperçus : `art/docs/previews/`. Lancer : `pnpm --filter art dev` puis `?date=YYYY-MM-DD` (flèches ← → pour naviguer).

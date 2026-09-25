@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "node api/_build.mjs",
+  "crons": [
+    { "path": "/cron/github-sync", "schedule": "15 2 * * *" }
+  ]
+}

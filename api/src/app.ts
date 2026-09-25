@@ -156,7 +156,12 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   const read = new Hono();
-  if (deps.protectReads) read.use("*", requireReadToken);
+  // Seulement sur les routes de lecture : un `*` monté à la racine s'appliquerait
+  // aussi à /cron/:name et aux routes des autres zones (ex. /health).
+  if (deps.protectReads) {
+    read.use("/day/*", requireReadToken);
+    read.use("/range", requireReadToken);
+  }
 
   read.get("/day/:date", async (c) => {
     const date = IsoDate.safeParse(c.req.param("date"));

@@ -273,6 +273,14 @@ describe("GET /cron/:name", () => {
     expect(ran).toBe(1);
   });
 
+  it("200 avec CRON_SECRET même quand PROTECT_READS=true (la protection de lecture ne s'applique pas à /cron)", async () => {
+    registerJob("github-sync", "15 4 * * *", () => ({ ok: 1 }));
+    const app = makeApp({ cronSecret: CRON_SECRET, protectReads: true, readToken: READ_TOKEN });
+    const res = await call(app, "github-sync");
+    expect(res.status).toBe(200);
+    expect((await call(app, "inconnue")).status).toBe(404);
+  });
+
   it("200 : une tâche sans valeur de retour renvoie result: null", async () => {
     registerJob("vide", "0 * * * *", () => {});
     const body = await (await call(cronApp(), "vide")).json();
