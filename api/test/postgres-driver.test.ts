@@ -33,7 +33,7 @@ afterAll(async () => {
 
 describe("driver postgres", () => {
   it("applique les migrations une seule fois", async () => {
-    expect(await migrate(db.executor)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql"]);
+    expect(await migrate(db.executor)).toEqual(["001_daily_metrics.sql", "002_ops_alert_state.sql", "003_artworks.sql"]);
     expect(await migrate(db.executor)).toEqual([]);
   });
 
