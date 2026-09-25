@@ -75,6 +75,32 @@ $env:SILLAGE_API_URL = "http://localhost:8787"; $env:INGEST_TOKEN = "..."; pnpm 
 
 Pour vérifier l'API de production **sans rien écrire** : `node api/scripts/check-prod.mjs` (voir docs/DEPLOY.md).
 
+## Juste installer l'app pour l'utiliser au quotidien (recommandé)
+
+Si tu ne comptes pas modifier le code, construis l'APK **autonome** (profil `preview`) : le
+JavaScript est embarqué dans l'app, qui fonctionne donc **sans ton ordinateur**. C'est aussi
+ce qu'il faut pour la synchronisation automatique du matin (étape 6).
+
+Sous Windows (PowerShell), depuis la racine du dépôt :
+
+```powershell
+npx pnpm@10.33.0 install
+cd app
+npx eas-cli@latest login      # compte gratuit sur https://expo.dev/signup
+npx eas-cli@latest init       # une seule fois ; commite le changement d'app.json
+npx eas-cli@latest build --profile preview --platform android
+```
+
+Compte 10 à 20 minutes. À la fin : un lien et un QR code → télécharge l'APK sur le téléphone
+et installe-le (autorise l'installation depuis le navigateur, puis « Installer quand même » si
+Play Protect avertit). Suis ensuite les étapes « Préparer le téléphone » plus bas pour Health Connect.
+
+À chaque changement de l'app, relance la même commande `build` et réinstalle l'APK par-dessus
+(les réglages et le token sont conservés).
+
+Le **development build** décrit ci-dessous sert à développer : il charge le code depuis ton
+ordinateur (`pnpm start` doit tourner) et affiche les modifications instantanément.
+
 ## Pourquoi un « development build » (et pas Expo Go)
 
 Expo Go est une app générique : elle ne contient pas le code natif de Health Connect et ne
