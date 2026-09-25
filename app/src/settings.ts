@@ -5,7 +5,16 @@
 import * as SecureStore from "expo-secure-store";
 
 import { healthConnectReader } from "./healthConnect";
-import { parseSyncState, runSync, type Settings, type SyncKind, type SyncRecord, type SyncState } from "./sync";
+import {
+  EMPTY_SYNC_STATE,
+  parseSyncState,
+  runSync,
+  type Settings,
+  type SyncDeps,
+  type SyncKind,
+  type SyncRecord,
+  type SyncState,
+} from "./sync";
 
 // Clés SecureStore : lettres, chiffres, « . », « - » et « _ » uniquement.
 const KEY_API_URL = "sillage.apiUrl";
@@ -32,11 +41,30 @@ export async function deleteToken(): Promise<void> {
   await SecureStore.deleteItemAsync(KEY_TOKEN);
 }
 
+/**
+ * Pour les synchros : une erreur de lecture du stockage remonte, pour que l'appelant n'écrase
+ * pas l'état mémorisé par un état vide.
+ */
+export async function readSyncState(): Promise<SyncState> {
+  return parseSyncState(await SecureStore.getItemAsync(KEY_SYNC_STATE));
+}
+
+/** Pour l'affichage : ne lève jamais (état vide si le stockage est illisible). */
 export async function loadSyncState(): Promise<SyncState> {
   try {
-    return parseSyncState(await SecureStore.getItemAsync(KEY_SYNC_STATE));
+    return await readSyncState();
   } catch {
-    return { lastAttempt: null, lastSuccess: null };
+    return { ...EMPTY_SYNC_STATE };
+  }
+}
+
+/** URL et token renseignés (sans les valider : c'est le rôle de api.ts). */
+export async function hasSettings(): Promise<boolean> {
+  try {
+    const s = await loadSettings();
+    return s.apiUrl.trim() !== "" && s.token.trim() !== "";
+  } catch {
+    return false;
   }
 }
 
@@ -50,21 +78,28 @@ function compact(r: SyncRecord | null): SyncRecord | null {
   };
 }
 
-async function saveSyncState(state: SyncState): Promise<void> {
+export async function saveSyncState(state: SyncState): Promise<void> {
+  const b = state.lastBackground;
   const value = JSON.stringify({
     lastAttempt: compact(state.lastAttempt),
     lastSuccess: compact(state.lastSuccess),
+    lastBackground: b ? { ...b, message: b.message.slice(0, 300) } : null,
   });
   await SecureStore.setItemAsync(KEY_SYNC_STATE, value);
 }
 
-/** Synchro réelle : Health Connect + fetch du téléphone + SecureStore. */
-export function syncNow(kind: SyncKind): Promise<SyncRecord> {
-  return runSync(kind, {
+/** Dépendances réelles de runSync : Health Connect + fetch du téléphone + SecureStore. */
+export function realSyncDeps(): SyncDeps {
+  return {
     reader: healthConnectReader,
     fetch: (url, init) => fetch(url, init),
     loadSettings,
-    loadState: loadSyncState,
+    loadState: readSyncState,
     saveState: saveSyncState,
-  });
+  };
+}
+
+/** Synchro réelle, depuis l'écran (boutons ou repli à l'ouverture). */
+export function syncNow(kind: SyncKind): Promise<SyncRecord> {
+  return runSync(kind, realSyncDeps());
 }

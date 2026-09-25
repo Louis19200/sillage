@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { backgroundTaskDiagnostic } from "../backgroundTask";
 import { Button } from "../components";
 import { computeLastCompleteDays, type ComputedHealthDay } from "../days";
 import { formatClock, formatDayLabel, formatSleepMinutes, formatSteps, MISSING } from "../format";
@@ -96,7 +97,14 @@ function DiagnosticPanel(props: { t: Theme }): ReactNode {
   const run = useCallback(async () => {
     setRunning(true);
     try {
-      setLines(await runDiagnostic());
+      const hc = await runDiagnostic();
+      let task: string[];
+      try {
+        task = await backgroundTaskDiagnostic();
+      } catch (e) {
+        task = [`Tâche de fond : ERREUR ${e instanceof Error ? e.message : String(e)}`];
+      }
+      setLines([...hc, ...task]);
     } finally {
       setRunning(false);
     }
