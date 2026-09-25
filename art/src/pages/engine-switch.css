@@ -1,0 +1,27 @@
+/* Sélecteur « v1 · v2 » (page du jour et galerie). Couleurs de la page : --ink, --muted, --line. */
+.engine-switch {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border: 1px solid var(--line, #d9d4ca);
+  border-radius: 999px;
+  padding: 1px;
+}
+
+.engine-switch a {
+  color: var(--muted, #8a867e);
+  text-decoration: none;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+.engine-switch a:hover,
+.engine-switch a:focus-visible { color: var(--ink, #2b2a28); outline: none; }
+
+.engine-switch a[aria-current] {
+  background: var(--ink, #2b2a28);
+  color: var(--paper, #efece6);
+}

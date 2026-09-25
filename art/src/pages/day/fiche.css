@@ -1,0 +1,207 @@
+/* Page du jour, moteur v2 : œuvre, légende de la technique, fiche de calcul repliable. */
+
+.day__art--v2 canvas {
+  width: var(--art-size, 600px);
+  height: var(--art-size, 600px);
+}
+
+.technique {
+  margin: -6px 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.technique strong {
+  color: var(--ink);
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-weight: 400;
+  font-size: 1rem;
+}
+
+.technique__tag {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px dashed var(--muted);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.export__note {
+  font-style: italic;
+  border-bottom: 1px dotted var(--muted);
+  cursor: help;
+}
+
+/* ——— Fiche ——— */
+
+.day__fiche {
+  width: min(760px, 100%);
+}
+
+.day__fiche:empty { display: none; }
+
+.fiche {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.fiche__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 12px 2px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.fiche__summary::-webkit-details-marker { display: none; }
+
+.fiche__title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 1.02rem;
+}
+
+.fiche__title::before {
+  content: "▸";
+  display: inline-block;
+  width: 1.2em;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+
+.fiche[open] .fiche__title::before { transform: rotate(90deg); }
+
+.fiche__hint {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.fiche__summary:focus-visible { outline: 2px solid var(--line); outline-offset: 2px; }
+
+.fiche__body {
+  padding: 4px 2px 18px;
+  display: grid;
+  gap: 18px;
+}
+
+.fiche__step { display: grid; gap: 6px; min-width: 0; }
+
+.fiche__h {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fiche__n {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-size: 0.66rem;
+  color: var(--ink);
+}
+
+.fiche__p { margin: 0; }
+.fiche__p--muted { color: var(--muted); font-size: 0.78rem; }
+.fiche__result { font-weight: 600; }
+.fiche__status { color: var(--muted); font-style: italic; }
+
+.fiche__formula {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  background: color-mix(in srgb, var(--line) 45%, transparent);
+  border-radius: 4px;
+  padding: 5px 8px;
+  overflow-wrap: anywhere;
+}
+
+.fiche__rows {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 3px 16px;
+  margin: 0;
+}
+
+.fiche__rows dt { color: var(--muted); }
+.fiche__rows dd { margin: 0; display: flex; flex-wrap: wrap; gap: 0 10px; align-items: baseline; }
+.fiche__val { font-variant-numeric: tabular-nums; }
+.fiche__note { color: var(--muted); font-size: 0.76rem; }
+.fiche__missing { color: var(--muted); font-style: italic; border-bottom: 1px dashed var(--muted); }
+
+.fiche__list { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
+.fiche__list strong { font-weight: 600; }
+
+.fiche__scroll { overflow-x: auto; }
+
+.fiche__table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8rem;
+}
+
+.fiche__table th,
+.fiche__table td {
+  text-align: left;
+  padding: 4px 8px 4px 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.fiche__table th { color: var(--muted); font-weight: 500; font-size: 0.72rem; }
+
+.fiche__table--weights th,
+.fiche__table--weights td { text-align: center; padding: 3px 6px; white-space: nowrap; }
+.fiche__table--weights .is-chosen { color: var(--ink); font-weight: 700; }
+
+/* Barres des chances */
+.fiche__bars { display: grid; gap: 4px; }
+
+.bar {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr 11rem;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+}
+
+.bar__track {
+  height: 10px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--line) 60%, transparent);
+  overflow: hidden;
+}
+
+.bar__fill {
+  display: block;
+  height: 100%;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  border-radius: 5px;
+}
+
+.bar__val { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 0.74rem; }
+.bar--out .bar__name { color: var(--muted); text-decoration: line-through; }
+.bar--out .bar__track { background: repeating-linear-gradient(90deg, var(--line) 0 4px, transparent 4px 8px); opacity: 0.6; }
+.bar--chosen .bar__name { font-weight: 700; }
+.bar--chosen .bar__fill { background: var(--ink); }
+.bar--chosen .bar__val { color: var(--ink); }
+
+@media (max-width: 560px) {
+  .bar { grid-template-columns: 6rem 1fr; }
+  .bar__val { grid-column: 2; }
+}

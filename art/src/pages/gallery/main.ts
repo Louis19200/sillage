@@ -20,6 +20,11 @@ import {
 } from "./calendar";
 import { hasData, inputFingerprints, toDayInput } from "./inputs";
 import { Thumbnailer, type ThumbRequest, type ThumbStats } from "./thumbs";
+import { ThumbnailerV2, type ThumbV2Stats } from "./thumbs-v2";
+import { currentEngine, mountEngineSwitch, type Engine } from "../engine-choice";
+import { loadV2 } from "../v2-data";
+import { compactFiche, ENGINE_VERSION, techniqueFor, type DaySelection } from "../../engine-v2";
+import { FAMILY_NAMES, STYLE_NAMES, STYLES, familyOf, type StyleId } from "@sillage/shared";
 
 type View = { kind: "year"; year: number } | { kind: "month"; year: number; month: number };
 
@@ -229,12 +234,50 @@ function statusText(stats: ThumbStats, source: DataSource): string {
 
 declare global {
   interface Window {
-    __gallery?: { stats: ThumbStats | null; dataMs: number; view: View; done: boolean };
+    __gallery?: { stats: ThumbStats | ThumbV2Stats | null; dataMs: number; view: View; done: boolean; engine?: Engine; styles?: Record<string, string> };
   }
+}
+
+/** Moteur v2 : technique et résumé du calcul sur chaque case, compteurs par technique. */
+function annotateV2(cells: Map<string, Cell>, selections: Map<string, DaySelection>, dates: readonly string[], view: View): Record<string, string> {
+  const styles: Record<string, string> = {};
+  const counts = new Map<StyleId, number>();
+  for (const date of dates) {
+    const sel = selections.get(date);
+    const cell = cells.get(date);
+    if (!sel || !cell || !cell.node.classList.contains("cell--art")) continue;
+    const t = techniqueFor(sel.style);
+    styles[date] = sel.style;
+    counts.set(sel.style, (counts.get(sel.style) ?? 0) + 1);
+    cell.node.dataset.style = sel.style;
+    cell.node.classList.add(`cell--fam-${familyOf(sel.style)}`);
+    if (!t.ported) cell.node.classList.add("cell--provisional");
+    cell.node.title = `${formatLongDate(date)}\n${compactFiche(sel, t)}`;
+    cell.node.setAttribute("aria-label", `${formatLongDate(date)}, ${t.name}`);
+    const note = cell.node.parentElement?.querySelector(".mday__note");
+    if (note) note.textContent = t.name;
+  }
+  const box = $("techniques");
+  box.replaceChildren();
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  if (total === 0) return styles;
+  box.append(el("span", "techniques__label", view.kind === "year" ? `Techniques en ${view.year}` : "Techniques du mois"));
+  for (const s of STYLES) {
+    const n = counts.get(s) ?? 0;
+    if (n === 0) continue;
+    const item = el("span", `techniques__item cell--fam-${familyOf(s)}`);
+    item.title = `${STYLE_NAMES[s]} (famille ${FAMILY_NAMES[familyOf(s)]}) : ${n} jour${n > 1 ? "s" : ""}${techniqueFor(s).ported ? "" : " · rendu provisoire"}`;
+    item.append(el("i", "techniques__swatch"), `${STYLE_NAMES[s]} `, el("b", undefined, String(n)));
+    box.append(item);
+  }
+  return styles;
 }
 
 async function main(source: DataSource): Promise<void> {
   const t0 = performance.now();
+  const engine = currentEngine();
+  document.body.dataset.engine = engine;
+  mountEngineSwitch($("engine"), engine);
   const params = new URLSearchParams(window.location.search);
   const today = localToday();
   const fallback = await source.defaultDate();
@@ -251,7 +294,9 @@ async function main(source: DataSource): Promise<void> {
   // Une requête : la période + les 90 jours avant son premier jour (normalisation).
   const from = addDays(dates[0]!, -REFERENCE_WINDOW_DAYS);
   const to = dates.at(-1)!;
-  const history: DayInput[] = (await source.getRange(from, to)).map(toDayInput);
+  const v2 = engine === "v2" ? await loadV2(source, dates[0]!, to < today ? to : today) : null;
+  const rawDays = v2 ? v2.days : await source.getRange(from, to);
+  const history: DayInput[] = rawDays.map(toDayInput);
   window.__gallery.dataMs = performance.now() - t0;
   const byDate = new Map(history.map((d) => [d.date, d]));
 
@@ -283,10 +328,45 @@ async function main(source: DataSource): Promise<void> {
     section.classList.toggle("ym--empty", n === 0);
   });
   $("summary").textContent = summaryText(view, toRender.length, past);
+  const styles = v2 ? annotateV2(cells, v2.selections, dates, view) : undefined;
 
   if (toRender.length === 0) {
     $("status").textContent = `source : ${source.kind}`;
-    window.__gallery = { stats: null, dataMs: window.__gallery.dataMs, view, done: true };
+    window.__gallery = { stats: null, dataMs: window.__gallery.dataMs, view, done: true, engine };
+    document.body.dataset.ready = "true";
+    return;
+  }
+
+  if (v2) {
+    const size = view.kind === "year" ? thumbSize(cells, 64, 192) : thumbSize(cells, 192, 512);
+    const useCache = !import.meta.env.DEV || params.has("cache");
+    const cache = useCache && !params.has("nocache") ? await openThumbCache() : null;
+    const fingerprints = inputFingerprints(toRender, history);
+    const thumbs = new ThumbnailerV2(v2.days, { cache, version: `${ENGINE_VERSION}|${import.meta.url}|${size}`, workers: Number(params.get("workers")) || undefined });
+    window.addEventListener("pagehide", () => {
+      void cache?.flush();
+      thumbs.dispose();
+    });
+    $("status").textContent = `source : ${source.kind} · moteur v2 · ${toRender.length} œuvres à rendre…`;
+    const stats = await thumbs.render(
+      toRender.filter((d) => v2.selections.has(d)).map((date) => ({
+        date,
+        size,
+        selection: v2.selections.get(date)!,
+        fingerprint: fingerprints.get(date)!,
+        onReady(url: string) {
+          const img = new Image(size, size);
+          img.alt = "";
+          img.decoding = "async";
+          img.onload = () => img.classList.add("is-ready");
+          img.src = url;
+          cells.get(date)!.node.replaceChildren(img);
+        },
+      })),
+    );
+    const secs = ((stats.totalMs ?? 0) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+    $("status").textContent = `source : ${source.kind} · moteur v2 · ${stats.requested} œuvres en ${secs} s${stats.fromCache ? ` (${stats.fromCache} en cache)` : ""} · rendu ${stats.renderer === "worker" ? "hors fil principal" : "fil principal"}${stats.failed ? ` · ${stats.failed} en échec` : ""}`;
+    window.__gallery = { stats, dataMs: window.__gallery.dataMs, view, done: true, engine, ...(styles ? { styles } : {}) };
     document.body.dataset.ready = "true";
     return;
   }
