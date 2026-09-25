@@ -5,6 +5,9 @@
  *
  *   SILLAGE_API_URL=http://localhost:8787 INGEST_TOKEN=... pnpm --filter @sillage/app check-api
  *
+ * ATTENTION : écrit 30 journées FACTICES. Refuse donc toute API non locale, sauf
+ * SILLAGE_ALLOW_REMOTE=1 (à ne jamais faire sur la base de production).
+ *
  * Le token est lu dans l'environnement et n'est jamais affiché.
  */
 import { DailyMetrics } from "@sillage/shared";
@@ -15,6 +18,14 @@ import { computeLastCompleteDays, localDateOf, type HealthReader } from "../src/
 const baseUrl = process.env.SILLAGE_API_URL ?? "http://localhost:8787";
 const token = process.env.INGEST_TOKEN ?? "";
 const count = Number(process.env.SILLAGE_DAYS ?? 30);
+
+if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(baseUrl) && process.env.SILLAGE_ALLOW_REMOTE !== "1") {
+  console.error(
+    `check-api écrit des journées FACTICES : refus d'écrire dans ${baseUrl}.\n` +
+      "Utilise une API locale (voir api/README.md). Pour vérifier la production sans rien écrire : node api/scripts/check-prod.mjs",
+  );
+  process.exit(2);
+}
 
 /** Faux Health Connect : 1 jour sur 4 sans données (null), 1 jour à 0 pas, une nuit chaque jour sauf les jours vides. */
 function fakeReader(now: Date): HealthReader {

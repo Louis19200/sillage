@@ -6,7 +6,9 @@
  * teste avec jest, sans téléphone ni réseau. Le câblage réel est dans `settings.ts`.
  */
 import { ingestHealthDays, type FetchLike, type IngestErrorKind } from "./api";
-import { computeLastCompleteDays, type HealthReader, type LocalDate } from "./days";
+import type { HealthDay } from "@sillage/shared";
+
+import { computeLastCompleteDays, type ComputedHealthDay, type HealthReader, type LocalDate } from "./days";
 
 /** Bouton « Synchroniser » : les 7 dernières journées complètes (hier compris). */
 export const SYNC_DAYS = 7;
@@ -16,8 +18,28 @@ export const SYNC_DAYS = 7;
  * aller au-delà n'apporterait que des `null`, sauf avec la permission d'historique.
  */
 export const BACKFILL_DAYS = 30;
+/**
+ * Synchros automatiques (tâche de fond, ou ouverture de l'app en repli) : les 3 dernières
+ * journées complètes. Hier, plus deux jours pour rattraper un échec (réseau coupé, téléphone
+ * éteint, tâche tuée par le système) sans renvoyer toute la semaine.
+ */
+export const AUTO_DAYS = 3;
 
-export type SyncKind = "sync" | "backfill";
+/**
+ * - `sync` / `backfill` : boutons de l'écran ;
+ * - `background` : tâche quotidienne en arrière-plan ;
+ * - `open` : repli, lancé à l'ouverture de l'app quand hier n'a pas encore été envoyé.
+ */
+export type SyncKind = "sync" | "backfill" | "background" | "open";
+
+/** Dernier réveil de la tâche de fond, qu'elle ait envoyé quelque chose ou non. */
+export interface BackgroundRun {
+  /** Instant du réveil, ISO 8601 UTC (affichage seulement). */
+  at: string;
+  /** `sent` : synchro réussie ; `failed` : synchro tentée, en échec ; `skipped` : rien à faire. */
+  outcome: "sent" | "failed" | "skipped";
+  message: string;
+}
 
 /** Ce qu'on mémorise après chaque tentative (et qu'on affiche). Aucun secret ici. */
 export interface SyncRecord {
@@ -38,7 +60,11 @@ export interface SyncRecord {
 export interface SyncState {
   lastAttempt: SyncRecord | null;
   lastSuccess: SyncRecord | null;
+  /** Absent des états enregistrés avant l'étape 6 : relu comme `null`. */
+  lastBackground: BackgroundRun | null;
 }
+
+export const EMPTY_SYNC_STATE: SyncState = { lastAttempt: null, lastSuccess: null, lastBackground: null };
 
 export interface Settings {
   apiUrl: string;
@@ -55,9 +81,39 @@ export interface SyncDeps {
   timeoutMs?: number;
 }
 
-/** Les deux types de synchro ne diffèrent que par le nombre de jours. */
+/**
+ * Ce qu'on envoie vraiment. Une valeur absente de Health Connect n'est pas envoyée
+ * (champ omis = colonne intacte côté API) : une lecture vide (autorisation retirée,
+ * appli source déconnectée) ne peut donc jamais effacer des valeurs déjà en base.
+ * Une journée sans aucune valeur n'est pas envoyée du tout ; pour l'art, une ligne
+ * absente et une ligne à `null` se lisent de la même façon.
+ */
+export function toIngestDays(days: readonly ComputedHealthDay[]): HealthDay[] {
+  const out: HealthDay[] = [];
+  for (const day of days) {
+    const kept: HealthDay = { date: day.date };
+    if (day.steps !== null) kept.steps = day.steps;
+    if (day.sleep_minutes !== null) {
+      kept.sleep_minutes = day.sleep_minutes;
+      kept.sleep_start = day.sleep_start;
+      kept.sleep_end = day.sleep_end;
+    }
+    if (Object.keys(kept).length > 1) out.push(kept);
+  }
+  return out;
+}
+
+/** Les types de synchro ne diffèrent que par le nombre de jours. */
 export function daysFor(kind: SyncKind): number {
-  return kind === "backfill" ? BACKFILL_DAYS : SYNC_DAYS;
+  switch (kind) {
+    case "backfill":
+      return BACKFILL_DAYS;
+    case "background":
+    case "open":
+      return AUTO_DAYS;
+    case "sync":
+      return SYNC_DAYS;
+  }
 }
 
 /**
@@ -71,40 +127,60 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
 
   let record: SyncRecord;
   try {
-    const days = await computeLastCompleteDays(deps.reader, count, now);
-    const from = days[0]?.date ?? null;
-    const to = days[days.length - 1]?.date ?? null;
-    const settings = await deps.loadSettings();
-    const outcome = await ingestHealthDays({
-      baseUrl: settings.apiUrl,
-      token: settings.token,
-      days,
-      fetch: deps.fetch,
-      ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
-    });
-    record = outcome.ok
-      ? {
-          ...base,
-          ok: true,
-          from,
-          to,
-          days: days.length,
-          upserted: outcome.upserted,
-          errorKind: null,
-          message: `${outcome.upserted} journée${outcome.upserted > 1 ? "s" : ""} enregistrée${outcome.upserted > 1 ? "s" : ""}.`,
-          details: [],
-        }
-      : {
-          ...base,
-          ok: false,
-          from,
-          to,
-          days: days.length,
-          upserted: null,
-          errorKind: outcome.kind,
-          message: outcome.message,
-          details: outcome.details,
-        };
+    const computed = await computeLastCompleteDays(deps.reader, count, now);
+    const from = computed[0]?.date ?? null;
+    const to = computed[computed.length - 1]?.date ?? null;
+    const days = toIngestDays(computed);
+    const empty = computed.length - days.length;
+
+    if (days.length === 0) {
+      record = {
+        ...base,
+        ok: false,
+        from,
+        to,
+        days: 0,
+        upserted: null,
+        errorKind: "read",
+        message:
+          `Health Connect n'a renvoyé aucune donnée (pas ni sommeil) pour ces ${computed.length} jours : rien n'a été envoyé. ` +
+          "Vérifie qu'une appli (Samsung Health, Google Fit, ta montre…) écrit bien dans Health Connect : bouton « Diagnostic Health Connect ».",
+        details: [],
+      };
+    } else {
+      const settings = await deps.loadSettings();
+      const outcome = await ingestHealthDays({
+        baseUrl: settings.apiUrl,
+        token: settings.token,
+        days,
+        fetch: deps.fetch,
+        ...(deps.timeoutMs !== undefined ? { timeoutMs: deps.timeoutMs } : {}),
+      });
+      const skipped = empty > 0 ? ` ${empty} journée${empty > 1 ? "s" : ""} sans données, non envoyée${empty > 1 ? "s" : ""}.` : "";
+      record = outcome.ok
+        ? {
+            ...base,
+            ok: true,
+            from,
+            to,
+            days: days.length,
+            upserted: outcome.upserted,
+            errorKind: null,
+            message: `${outcome.upserted} journée${outcome.upserted > 1 ? "s" : ""} enregistrée${outcome.upserted > 1 ? "s" : ""}.${skipped}`,
+            details: [],
+          }
+        : {
+            ...base,
+            ok: false,
+            from,
+            to,
+            days: days.length,
+            upserted: null,
+            errorKind: outcome.kind,
+            message: outcome.message,
+            details: outcome.details,
+          };
+    }
   } catch (e) {
     record = {
       ...base,
@@ -122,6 +198,7 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
   try {
     const previous = await deps.loadState();
     await deps.saveState({
+      ...previous,
       lastAttempt: record,
       lastSuccess: record.ok ? record : previous.lastSuccess,
     });
@@ -133,7 +210,7 @@ export async function runSync(kind: SyncKind, deps: SyncDeps): Promise<SyncRecor
 
 /** Relit un état mémorisé ; toute valeur illisible donne un état vide plutôt qu'une erreur. */
 export function parseSyncState(raw: string | null): SyncState {
-  const empty: SyncState = { lastAttempt: null, lastSuccess: null };
+  const empty: SyncState = { ...EMPTY_SYNC_STATE };
   if (!raw) return empty;
   try {
     const v = JSON.parse(raw) as Partial<SyncState> | null;
@@ -141,6 +218,7 @@ export function parseSyncState(raw: string | null): SyncState {
     return {
       lastAttempt: isRecord(v.lastAttempt) ? v.lastAttempt : null,
       lastSuccess: isRecord(v.lastSuccess) ? v.lastSuccess : null,
+      lastBackground: isBackgroundRun(v.lastBackground) ? v.lastBackground : null,
     };
   } catch {
     return empty;
@@ -155,5 +233,15 @@ function isRecord(v: unknown): v is SyncRecord {
     typeof (v as SyncRecord).ok === "boolean" &&
     typeof (v as SyncRecord).message === "string" &&
     Array.isArray((v as SyncRecord).details)
+  );
+}
+
+function isBackgroundRun(v: unknown): v is BackgroundRun {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as BackgroundRun).at === "string" &&
+    typeof (v as BackgroundRun).message === "string" &&
+    ["sent", "failed", "skipped"].includes((v as BackgroundRun).outcome)
   );
 }

@@ -209,6 +209,44 @@ export function buildHealthUpsert(day: HealthDay): { text: string; params: unkno
   };
 }
 
+/**
+ * Upsert de plusieurs journées en une requête par jeu de colonnes (au lieu d'une par
+ * journée) : un backfill de 365 jours ne fait plus que 1 à 4 allers-retours vers la base.
+ * Une même date présente plusieurs fois est fusionnée (les champs les plus récents
+ * l'emportent), comme l'auraient fait des upserts successifs ; Postgres refuse sinon
+ * qu'un même INSERT … ON CONFLICT touche deux fois la même ligne.
+ */
+export function buildHealthUpsertBatch(days: readonly HealthDay[]): { text: string; params: unknown[] }[] {
+  const merged = new Map<string, HealthDay>();
+  for (const d of days) merged.set(d.date, { ...merged.get(d.date), ...d });
+
+  const groups = new Map<string, { cols: HealthColumn[]; days: HealthDay[] }>();
+  for (const d of merged.values()) {
+    const cols: HealthColumn[] = HEALTH_COLUMNS.filter((c) => Object.prototype.hasOwnProperty.call(d, c) && d[c] !== undefined);
+    const key = cols.join(",");
+    const g = groups.get(key) ?? { cols, days: [] };
+    g.days.push(d);
+    groups.set(key, g);
+  }
+
+  return [...groups.values()].map(({ cols, days: group }) => {
+    const params: unknown[] = [];
+    const rows = group.map((d) => {
+      const placeholders = [d.date, ...cols.map((c) => d[c] ?? null)].map((v) => {
+        params.push(v);
+        return `$${params.length}`;
+      });
+      return `(${[...placeholders, "now()"].join(", ")})`;
+    });
+    const insertCols = ["date", ...cols, "updated_at"].join(", ");
+    const updates = [...cols.map((c) => `${c} = EXCLUDED.${c}`), "updated_at = now()"].join(", ");
+    return {
+      text: `INSERT INTO daily_metrics (${insertCols}) VALUES ${rows.join(", ")} ON CONFLICT (date) DO UPDATE SET ${updates}`,
+      params,
+    };
+  });
+}
+
 export function createDb(executor: SqlExecutor): Db {
   return {
     executor,
@@ -219,8 +257,7 @@ export function createDb(executor: SqlExecutor): Db {
         if (!parsed.success) throw new Error(`journée santé invalide (${d?.date}) : ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
       }
       await executor.transaction(async (tx) => {
-        for (const d of days) {
-          const { text, params } = buildHealthUpsert(d);
+        for (const { text, params } of buildHealthUpsertBatch(days)) {
           await tx.query(text, params);
         }
       });

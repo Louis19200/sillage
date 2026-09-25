@@ -4,16 +4,17 @@ App Expo (Android uniquement) qui lit les **pas** et le **sommeil** dans Health 
 calcule les journées en heure locale sur le téléphone. Zone de l'agent `android-app`
 (phase 3, voir `.claude/agents/android-app.md`).
 
-État actuel : étapes 1 à 5. L'app demande l'accès à Health Connect, affiche les
+État actuel : étapes 1 à 6. L'app demande l'accès à Health Connect, affiche les
 7 dernières journées complètes **sans aucun appel réseau**, puis, sous le tableau, envoie
 ces 7 jours (« Synchroniser ») ou 30 jours (« Backfill 30 jours ») à `POST /ingest/health`.
-La tâche quotidienne en arrière-plan (étape 6) viendra ensuite.
+Depuis l'étape 6, une tâche de fond envoie chaque matin les 3 dernières journées complètes,
+et l'app rattrape à l'ouverture si la tâche n'a pas pu passer (voir « Synchro automatique »).
 
-> **Reconstruire le development build.** L'étape 4 ajoute un module natif
-> (`expo-secure-store`, et son plugin dans `app.json`). Un APK construit avant ne le contient
-> pas : l'app planterait à l'ouverture des réglages (« Cannot find native module
-> 'ExpoSecureStore' »). Refais `npx eas-cli@latest build --profile development --platform android`
-> (ou `npx expo run:android`) et réinstalle l'APK.
+> **Reconstruire l'APK (étape 6).** L'étape 6 ajoute du code natif (`expo-background-task`,
+> `expo-task-manager`, le module local `modules/sillage-device`) et une permission
+> (`READ_HEALTH_DATA_IN_BACKGROUND`). Un APK construit avant ne les contient pas : relance
+> `npx eas-cli@latest build --profile preview --platform android` et réinstalle par-dessus
+> (les réglages et le token sont conservés).
 
 ## Organisation
 
@@ -25,13 +26,16 @@ La tâche quotidienne en arrière-plan (étape 6) viendra ensuite.
 | `src/screens/PermissionsScreen.tsx` | Étape 2 : Health Connect présent ? Sinon, l'installer. Puis lecture Steps + SleepSession. |
 | `src/screens/DaysScreen.tsx` | Étape 3 : tableau date / pas / sommeil / coucher / réveil. |
 | `src/api.ts` | Étape 4 : client de `POST /ingest/health`, `fetch` injecté. Valide le corps (`HealthIngestBody`) et la réponse (`IngestResult`), gère 400, 401, autres statuts, réseau coupé, délai (20 s). Le token n'est jamais loggué ni recopié dans un message. |
-| `src/sync.ts` | Étapes 4 et 5 : `runSync("sync" \| "backfill", deps)` calcule 7 ou 30 jours, les envoie en **un seul appel** et mémorise le résultat. Tout est injecté, testé avec jest. |
+| `src/sync.ts` | Étapes 4 à 6 : `runSync("sync" \| "backfill" \| "background" \| "open", deps)` calcule 7, 30 ou 3 jours, n'envoie que les valeurs présentes, en **un seul appel**, et mémorise le résultat. Tout est injecté, testé avec jest. |
+| `src/background.ts` | Étape 6, module pur : faut-il synchroniser (`needsDailySync`, `shouldSyncOnOpen`), corps de la tâche de fond (`runBackgroundTask`, ne lève jamais), texte d'état (`describeAutoSync`). Testé avec jest. |
+| `src/backgroundTask.ts` | Étape 6, câblage : `TaskManager.defineTask` (importé par `index.ts` avant tout), enregistrement WorkManager toutes les 3 h environ. |
+| `modules/sillage-device/` | Module natif local (Kotlin, lecture seule) : disponibilité de la lecture en arrière-plan dans Health Connect (`getFeatureStatus`), optimisation et restriction de batterie. Absent de l'APK → « inconnu », sans planter. |
 | `src/settings.ts` | Câblage réel : URL, token et dernière synchro dans `expo-secure-store`. |
 | `src/screens/SettingsScreen.tsx` | URL de l'API et `INGEST_TOKEN` (masqué, jamais réaffiché). |
-| `src/screens/SyncPanel.tsx` | Boutons « Synchroniser (7 jours) » et « Backfill 30 jours », résultat, dernière tentative et dernière réussite. |
+| `src/screens/SyncPanel.tsx` | Boutons « Synchroniser (7 jours) » et « Backfill 30 jours », dernière tentative et dernière réussite ; état de la synchro automatique, dernier passage en arrière-plan, repli à l'ouverture. |
 | `scripts/check-api.ts` | Envoie 30 journées produites par un faux Health Connect à une vraie API et les relit. |
-| `app.json` | Plugin Health Connect, `minSdkVersion` 26, permissions `READ_STEPS` et `READ_SLEEP`. |
-| `eas.json` | Profil `development` (APK avec le client de développement). |
+| `app.json` | Plugins Health Connect et `expo-background-task`, `minSdkVersion` 26, permissions `READ_STEPS`, `READ_SLEEP` et `READ_HEALTH_DATA_IN_BACKGROUND`. |
+| `eas.json` | Profils `development` (client de développement) et `preview` (APK autonome, usage quotidien). |
 | `metro.config.js` | Monorepo : surveille la racine, résout les modules depuis `app/` puis la racine. |
 
 La lecture Health Connect est injectée dans `computeHealthDays(reader, dates)` : les tests
@@ -51,17 +55,55 @@ utilisent un faux lecteur, l'app utilise `healthConnectReader`.
   enregistrent la même nuit, le recouvrement n'est compté qu'une fois. Coucher et réveil =
   ceux de la plus longue session, avec le décalage local (`+02:00`). Aucune session → `null`.
 
-## Commandes
+## Commandes (développement)
+
+Tu n'en as **pas besoin** pour installer l'app sur ton téléphone : elles servent à vérifier le code. Pour l'installation, va directement à la section du development build ci-dessous.
 
 ```bash
-pnpm install                        # à la racine du dépôt
-pnpm --filter @sillage/app test     # jest, avec TZ=Europe/Paris (obligatoire, vérifié au démarrage)
+pnpm install                              # à la racine du dépôt
+pnpm --filter @sillage/app test           # jest, avec TZ=Europe/Paris (obligatoire, vérifié au démarrage)
 pnpm --filter @sillage/app typecheck
-pnpm --filter @sillage/app config   # config Expo résolue (plugins, permissions)
+pnpm --filter @sillage/app expo-config    # config Expo résolue (plugins, permissions)
+```
 
-# Client de synchro contre une vraie API (sans téléphone), voir api/README.md pour la démarrer
+Client de synchro contre une API **locale** (sans téléphone ; voir api/README.md pour la démarrer). Il écrit 30 journées **factices** et refuse toute autre adresse que `localhost` :
+
+```bash
 SILLAGE_API_URL=http://localhost:8787 INGEST_TOKEN=... pnpm --filter @sillage/app check-api
 ```
+
+```powershell
+# même chose sous Windows (PowerShell)
+$env:SILLAGE_API_URL = "http://localhost:8787"; $env:INGEST_TOKEN = "..."; pnpm --filter @sillage/app check-api
+```
+
+Pour vérifier l'API de production **sans rien écrire** : `node api/scripts/check-prod.mjs` (voir docs/DEPLOY.md).
+
+## Juste installer l'app pour l'utiliser au quotidien (recommandé)
+
+Si tu ne comptes pas modifier le code, construis l'APK **autonome** (profil `preview`) : le
+JavaScript est embarqué dans l'app, qui fonctionne donc **sans ton ordinateur**. C'est aussi
+ce qu'il faut pour la synchronisation automatique du matin (étape 6).
+
+Sous Windows (PowerShell), depuis la racine du dépôt :
+
+```powershell
+npx pnpm@10.33.0 install
+cd app
+npx eas-cli@latest login      # compte gratuit sur https://expo.dev/signup
+npx eas-cli@latest init       # une seule fois ; commite le changement d'app.json
+npx eas-cli@latest build --profile preview --platform android
+```
+
+Compte 10 à 20 minutes. À la fin : un lien et un QR code → télécharge l'APK sur le téléphone
+et installe-le (autorise l'installation depuis le navigateur, puis « Installer quand même » si
+Play Protect avertit). Suis ensuite les étapes « Préparer le téléphone » plus bas pour Health Connect.
+
+À chaque changement de l'app, relance la même commande `build` et réinstalle l'APK par-dessus
+(les réglages et le token sont conservés).
+
+Le **development build** décrit ci-dessous sert à développer : il charge le code depuis ton
+ordinateur (`pnpm start` doit tourner) et affiche les modifications instantanément.
 
 ## Pourquoi un « development build » (et pas Expo Go)
 
@@ -224,6 +266,75 @@ n'est jamais réaffiché, jamais loggué, et n'est dans aucun fichier du dépôt
 Health Connect ne donne accès qu'aux **30 jours précédant l'octroi de la permission**.
 Au-delà, il faudrait la permission d'historique (`READ_HEALTH_DATA_HISTORY`) : inutile de
 demander plus de 30 jours sans elle.
+
+## Synchro automatique (étape 6)
+
+### Ce qui se passe
+
+- Une **tâche de fond** (expo-background-task, donc WorkManager) se réveille environ toutes
+  les 3 h, seulement quand Sillage n'est pas à l'écran et que le téléphone a du réseau. Elle
+  n'envoie qu'**une fois par jour**, au premier réveil après **5 h** : les 3 dernières journées
+  complètes (hier, plus deux jours pour rattraper un échec). Les autres réveils de la journée
+  notent « rien à envoyer ». Une synchro faite avant 5 h est refaite après, pour prendre les
+  données arrivées en retard de la montre.
+- **Repli à l'ouverture** : si hier n'a pas encore été envoyé quand tu ouvres Sillage (tâche
+  bloquée, tuée par Samsung, permission refusée…), l'app envoie les 3 jours tout de suite
+  (« auto à l'ouverture » dans la dernière tentative). Jamais sans URL ni token, et pas plus
+  d'une tentative ratée toutes les 30 min.
+- Comme les autres synchros, seules les valeurs présentes sont envoyées ; si Health Connect ne
+  renvoie rien, rien n'est envoyé (et rien n'est effacé en base).
+- Le panneau « Synchro automatique » (sous les boutons) dit ce qui est vraiment en place :
+  « activée, en arrière-plan », ou « à l'ouverture de l'app seulement » avec la raison. Il
+  affiche aussi le **dernier passage en arrière-plan** (heure, « envoi réussi », « échec » ou
+  « rien à envoyer »). Le bouton « Diagnostic Health Connect » ajoute les mêmes informations
+  (fonctionnalité, permission, batterie, tâche).
+
+### Lecture de Health Connect en arrière-plan (Android 12)
+
+Sans la permission `READ_HEALTH_DATA_IN_BACKGROUND`, une lecture faite par la tâche de fond ne
+renvoie que les données écrites par Sillage lui-même (donc rien), voire lève une erreur : la
+tâche noterait alors un échec et le repli à l'ouverture prendrait le relais.
+
+Sur Android 13 et moins, Health Connect est l'appli du Play Store : la lecture en arrière-plan
+y est disponible si cette appli est **assez récente** (fonctionnalité
+`FEATURE_READ_HEALTH_DATA_IN_BACKGROUND`, version 171302 ou plus, largement dépassée par une
+appli à jour). Le module `modules/sillage-device` le vérifie ; l'écran affiche
+« indisponible dans cette version de Health Connect » sinon : mets-la à jour depuis le Play Store.
+
+### Ce que tu dois faire après avoir réinstallé l'APK
+
+1. **Reconstruire** le profil `preview` et réinstaller par-dessus (encadré en haut).
+2. Ouvre Sillage. Dans « Synchro automatique », touche **Autoriser la lecture en
+   arrière-plan** : la fenêtre Health Connect s'ouvre avec Pas, Sommeil et l'accès en
+   arrière-plan ; active ce dernier. Le panneau doit passer à « activée, en arrière-plan ».
+   (Plus tard : Health Connect → Autorisations des applis → Sillage.)
+3. **Batterie (Samsung, One UI 4)** : Samsung tue souvent les tâches de fond.
+   - Paramètres → Applications → **Sillage** → **Batterie** → choisis **« Non restreinte »**
+     (selon la traduction : « Sans restriction » ; en tout cas pas « Optimisée » ni
+     « Restreinte »). Le bouton « Ouvrir les réglages de Sillage » du panneau mène à l'écran
+     Applications → Sillage.
+   - Paramètres → **Batterie et maintenance de l'appareil** → **Batterie** → **Limites
+     d'utilisation en arrière-plan** → **Applications jamais en veille** → **+** → Sillage.
+     Vérifie aussi que Sillage n'est ni dans « Applications en veille » ni dans
+     « Applications en veille prolongée ».
+4. Ferme Sillage (bouton accueil, pas besoin de la tuer) et attends le **lendemain matin**. Le
+   premier réveil a lieu au plus tôt 3 h après la première ouverture.
+5. Le lendemain, **avant d'ouvrir Sillage** (sinon le repli à l'ouverture fausse le test),
+   vérifie que la veille est en base :
+   `curl -H "Authorization: Bearer <READ_TOKEN>" "<url>/range?from=<hier>&to=<hier>"`.
+   Puis ouvre Sillage : « Dernier passage en arrière-plan » doit dire « envoi réussi » vers
+   5–8 h, et la dernière tentative « arrière-plan ».
+
+Si le dernier passage dit « jamais » après une nuit, Android ne lance pas la tâche (batterie,
+veille) ; s'il dit « échec » avec « n'est pas autorisée », c'est la permission du point 2.
+Dans les deux cas, ouvrir Sillage envoie quand même hier.
+
+Pour forcer un passage sans attendre (téléphone en USB, débogage activé, Sillage fermée) :
+
+```bash
+adb shell dumpsys jobscheduler | grep -A2 "app.sillage"    # repère le numéro du job (#u0a…/NN)
+adb shell cmd jobscheduler run -f app.sillage NN
+```
 
 ## pnpm et Expo
 

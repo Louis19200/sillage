@@ -89,3 +89,4 @@ export function clearJobs(): void {
 // --- Enregistrements (une ligne par agent) ----------------------------------
 // ex. github-collector : registerJob("github-sync", "15 4 * * *", () => syncGithub(last7Days()));
 registerJob("github-sync", "15 4 * * *", () => import("./collectors/github/sync").then((m) => m.runGithubSyncJob()), { timezone: "Europe/Paris" });
+registerJob("check-freshness", "5 * * * *", () => import("./ops/freshness").then((m) => m.runFreshnessJob())); // Vercel : 1×/jour (vercel.json)

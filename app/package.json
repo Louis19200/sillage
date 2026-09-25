@@ -6,7 +6,7 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "config": "expo config --type public",
+    "expo-config": "expo config --type public",
     "typecheck": "tsc --noEmit",
     "test": "cross-env TZ=Europe/Paris jest",
     "check-api": "tsx scripts/check-api.ts"
@@ -14,11 +14,13 @@
   "dependencies": {
     "@sillage/shared": "workspace:*",
     "expo": "~57.0.25",
+    "expo-background-task": "~57.0.20",
     "expo-build-properties": "~57.0.22",
     "expo-dev-client": "~57.0.19",
     "expo-secure-store": "~57.0.4",
     "expo-status-bar": "~57.0.1",
     "expo-system-ui": "~57.0.4",
+    "expo-task-manager": "~57.0.20",
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-health-connect": "^4.1.3"

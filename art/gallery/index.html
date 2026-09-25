@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sillage · galerie</title>
+    <link rel="stylesheet" href="/src/pages/gallery/gallery.css" />
+  </head>
+  <body>
+    <main class="gallery" id="gallery">
+      <header class="gallery__header">
+        <a class="gallery__brand" id="brand" href="/">Sillage</a>
+        <nav class="gallery__views" aria-label="Vue">
+          <a id="view-month" href="#">mois</a>
+          <a id="view-year" href="#">année</a>
+        </nav>
+      </header>
+      <div class="gallery__nav" id="nav"></div>
+      <p class="gallery__summary" id="summary"></p>
+      <section class="gallery__body" id="body" aria-live="polite"></section>
+      <footer class="gallery__footer">
+        <span class="gallery__key"><span class="key__nodata" aria-hidden="true"></span>sans données</span>
+        <span class="gallery__status" id="status"></span>
+      </footer>
+    </main>
+    <script type="module" src="/src/pages/gallery/main.ts"></script>
+  </body>
+</html>

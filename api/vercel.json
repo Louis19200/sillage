@@ -3,6 +3,7 @@
   "framework": null,
   "buildCommand": "node api/_build.mjs",
   "crons": [
-    { "path": "/cron/github-sync", "schedule": "15 2 * * *" }
+    { "path": "/cron/github-sync", "schedule": "15 2 * * *" },
+    { "path": "/cron/check-freshness", "schedule": "5 7 * * *" }
   ]
 }

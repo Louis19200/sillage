@@ -14,13 +14,14 @@ import {
   seedFromDate,
 } from "../../engine";
 import { mountScene, type MountedScene } from "../../engine/render-p5";
+import { mountExportControls } from "../../export/controls";
 import { formatLongDate, legendRows } from "./format";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 function artSize(): number {
   const byWidth = window.innerWidth - 32;
-  const byHeight = window.innerHeight - 200;
+  const byHeight = window.innerHeight - 230; // 200 + la ligne d'export et de galerie (phase 6)
   return Math.max(240, Math.min(820, byWidth, byHeight));
 }
 
@@ -86,6 +87,8 @@ async function main(source: DataSource): Promise<void> {
   });
 
   renderLegend(legendRows(day, norms));
+  mountExportControls($("export"), () => scene);
+  $<HTMLAnchorElement>("gallery").href = `${import.meta.env.BASE_URL}gallery/?month=${date.slice(0, 7)}`;
   const absent = history.every((d) => d.date !== date);
   $("source").textContent =
     (absent ? "Journée absente de la base · " : "") +

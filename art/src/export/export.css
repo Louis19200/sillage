@@ -1,0 +1,71 @@
+/* Boutons d'export : du texte, comme la légende. Les couleurs viennent de la page (--ink, --muted, --line). */
+.export {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 0.7rem;
+  color: var(--muted, #8a867e);
+}
+
+.export__label {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.64rem;
+  margin-right: 2px;
+}
+
+.export__button,
+.export__size {
+  font: inherit;
+  color: var(--ink, #2b2a28);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--line, #d9d4ca);
+  padding: 1px 0;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.export__size {
+  color: var(--muted, #8a867e);
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2px;
+}
+
+.export__size option { color: initial; }
+
+.export__button:hover,
+.export__button:focus-visible,
+.export__size:hover,
+.export__size:focus-visible {
+  border-bottom-color: currentColor;
+  outline: none;
+}
+
+/* Ligne d'outils de la page du jour : export + lien vers la galerie. */
+.tools {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 28px;
+}
+
+.tools__link {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted, #8a867e);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.tools__link:hover, .tools__link:focus-visible { color: var(--ink, #2b2a28); border-bottom-color: currentColor; outline: none; }
+
+.export__button:disabled { opacity: 0.5; cursor: progress; }
+.export__sep { opacity: 0.6; }
+.export__status { font-style: italic; min-width: 1ch; }
