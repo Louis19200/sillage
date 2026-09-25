@@ -6,7 +6,7 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "config": "expo config --type public",
+    "expo-config": "expo config --type public",
     "typecheck": "tsc --noEmit",
     "test": "cross-env TZ=Europe/Paris jest",
     "check-api": "tsx scripts/check-api.ts"

@@ -51,17 +51,29 @@ utilisent un faux lecteur, l'app utilise `healthConnectReader`.
   enregistrent la même nuit, le recouvrement n'est compté qu'une fois. Coucher et réveil =
   ceux de la plus longue session, avec le décalage local (`+02:00`). Aucune session → `null`.
 
-## Commandes
+## Commandes (développement)
+
+Tu n'en as **pas besoin** pour installer l'app sur ton téléphone : elles servent à vérifier le code. Pour l'installation, va directement à la section du development build ci-dessous.
 
 ```bash
-pnpm install                        # à la racine du dépôt
-pnpm --filter @sillage/app test     # jest, avec TZ=Europe/Paris (obligatoire, vérifié au démarrage)
+pnpm install                              # à la racine du dépôt
+pnpm --filter @sillage/app test           # jest, avec TZ=Europe/Paris (obligatoire, vérifié au démarrage)
 pnpm --filter @sillage/app typecheck
-pnpm --filter @sillage/app config   # config Expo résolue (plugins, permissions)
+pnpm --filter @sillage/app expo-config    # config Expo résolue (plugins, permissions)
+```
 
-# Client de synchro contre une vraie API (sans téléphone), voir api/README.md pour la démarrer
+Client de synchro contre une API **locale** (sans téléphone ; voir api/README.md pour la démarrer). Il écrit 30 journées **factices** et refuse toute autre adresse que `localhost` :
+
+```bash
 SILLAGE_API_URL=http://localhost:8787 INGEST_TOKEN=... pnpm --filter @sillage/app check-api
 ```
+
+```powershell
+# même chose sous Windows (PowerShell)
+$env:SILLAGE_API_URL = "http://localhost:8787"; $env:INGEST_TOKEN = "..."; pnpm --filter @sillage/app check-api
+```
+
+Pour vérifier l'API de production **sans rien écrire** : `node api/scripts/check-prod.mjs` (voir docs/DEPLOY.md).
 
 ## Pourquoi un « development build » (et pas Expo Go)
 
