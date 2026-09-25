@@ -62,6 +62,16 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 - [x] Alerte (mail ou notification) si aucune donnée santé depuis 48 h.
 - [x] Endpoint `/health`.
 
+## Moteur v2 : une technique par jour (`generative-art`, avec gel côté API)
+- [x] Sélection déterministe partagée (`packages/shared/src/selection/`, réglages dans `constants.ts`), testée : déterminisme, pas de répétition sur 3 jours, jamais deux fois la même famille, gel, table, nulls, simulations.
+- [x] Gel des styles côté API : migration `003_artworks.sql`, tâche `freeze-styles` (cron `30 3 * * *`), `style` / `style_explain` dans `GET /day` et `GET /range` (additif).
+- [x] Cadre du moteur v2 côté art (`art/src/engine-v2/`) : interface `Technique`, palettes v2, rendu en Worker, fiche de calcul, galerie et export.
+- [x] Techniques portées : Marée (v1), Attracteur.
+- [ ] Techniques à porter (rendu provisoire en attendant) : Pelage, Corail, Harmonographe, Vitrail, Constructif, Réseau, Hachures, Pixels.
+- [ ] Déploiement : migration 003 + premier gel en production (voir notes).
+
+**Terminé quand :** chaque jour de l'historique a un style figé, la page du jour montre sa technique et la fiche « Comment cette œuvre a été choisie ».
+
 ## Phase 8 : extensions (`extensions`)
 Fréquence cardiaque, musique, lectures, météo… Chaque source = un collecteur + une colonne ou une table + un paramètre visuel.
 
@@ -167,3 +177,16 @@ Livré dans `api/src/ops/` (tests : `api/src/ops/ops.test.ts`, 19 tests PGlite ;
 
 ### Import Samsung Health (hors phases)
 Health Connect ne reçoit les données de Samsung Health qu'à partir de leur connexion (constaté sur Galaxy Note 10+, Android 12). Historique récupéré par l'export « Télécharger mes données personnelles » : `pnpm --filter api samsung:import <dossier> [--send]` (voir api/README.md). Export de l'utilisateur : 2446 journées de pas (2019-07-05 → 2026-09-24), 492 nuits. **Importé en production le 2026-09-25 (2446 journées).**
+
+### Moteur v2
+Branche `worktree-agent-ac153f2dc745eadf0` (partie des esquisses `a26d304`). Mode d'emploi : section « Moteur v2 » d'`art/README.md`.
+- **Contrat (additif)** : `DailyMetrics` gagne `style?` (`StyleIdSchema`, 10 valeurs) et `style_explain?` (`StyleExplain` : `SelectionExplain` + `frozen_at`, `engine_version`), dans `packages/shared/src/index.ts`, documentés dans docs/API.md, testés. `@sillage/shared` exporte aussi toute la sélection (`computeChain`, `selectDay`, `STYLES`, `FAMILIES`…). Les tests de `packages/shared` tournent maintenant avec `tsx --test` (imports sans extension, pour que l'app Expo continue de compiler).
+- **Sélection** : règles validées, toutes les valeurs dans `packages/shared/src/selection/constants.ts` (`SELECTION_VERSION = 1`). Choix à connaître : minute du réveil lue telle quelle si `sleep_end` a un décalage explicite, convertie en Europe/Paris si elle arrive en UTC (« …Z », ce que renvoie l'API) : fixtures et API donnent le même K. Jour « sans données » = pas, sommeil, réveil et commits tous absents (la météo seule ne compte pas) → K = numéro du jour depuis l'origine (0 le premier jour). Seuils météo proposés (à valider) : pluie ≥ 1 mm, vent fort ≥ 40 km/h ; règles actives dès que les champs `temp_max`, `precip_mm`, `wind_max_kmh` existent sur la journée (sans effet sur les jours déjà figés).
+- **Pour l'agent météo** : la sélection et `art/src/engine-v2/input.ts` lisent `temp_max`, `precip_mm`, `wind_max_kmh` (et côté art `temp_min`, `wind_dir_deg`, `cloud_cover`, `hourly_steps`) s'ils sont présents sur les jours de `GET /range`. Si les noms diffèrent, adapter `toSelectionDay` (`api/src/artworks/index.ts` et `art/src/engine-v2/select.ts`) et `weatherOf` (`input.ts`). Toute nouvelle donnée ne change que les jours non figés.
+- **Simulation** : fixtures (120 j) : Marée 9,2 %, Attracteur 12,5 %, Pelage 6,7 %, Corail 11,7 %, Harmonographe 15,8 %, Vitrail 10,8 %, Constructif 6,7 %, Réseau 10,8 %, Hachures 8,3 %, Pixels 7,5 %. 7 ans synthétiques avec trous (2 639 j, 94 ms) : de 5,0 % (Pixels) à 13,5 % (Harmonographe). Relancer sur les vraies données : `pnpm --filter @sillage/art v2:styles -- range.json`.
+- **API** (autorisé pour ces ajouts) : `api/db/migrations/003_artworks.sql`, `api/src/artworks/` (gel + `attachStyles`, 10 tests PGlite), une ligne dans `jobs.ts`, `withStyles` sur `/day` et `/range` dans `app.ts` (une panne d'`artworks` ne casse pas la lecture), cron `30 3 * * *` dans `api/vercel.json`. Hors zone, inévitable : liste des migrations dans `test/db.test.ts` et `test/postgres-driver.test.ts` (**l'agent de la migration 004 devra y ajouter la sienne**), deux vérifications dans `api/api/_smoke.ts` (migration 003, `/cron/freeze-styles` → ~2 460 jours figés en 0,3 s avec le vrai driver). Limite connue : `github-sync` réécrit les 7 derniers jours, le gel prend les jours de 3 jours et plus ; un commit compté tardivement (jours 3 à 7) ne change plus le style.
+- **Art** : `drawSceneToContext` déplacé tel quel dans `engine/render-canvas.ts` (sans p5, `render-p5` le réexporte) ; `export/png.ts` et `pages/gallery/thumbs.ts` l'importent de là, donc la galerie et la page v2 ne chargent plus p5 (chunk v1 seul). Page du jour découpée en `main.ts` (choix du moteur, import à la demande), `v1.ts` (inchangé), `v2.ts`. Galerie : mode v2 (miniatures rendues par les Workers en WebP, liseré de famille, compteurs par technique, infobulle = fiche compacte). `DataSource.firstDate?()` (fixtures) pour que la chaîne parte de l'origine sans style figé.
+- **Mesures** (Chromium headless, fixtures) : page du jour Attracteur ~0,5–0,7 s de rendu hors fil principal, Marée ~0,1 s ; galerie mois 31 œuvres en 0,4 s, année 120 œuvres en 0,5–0,7 s. Attracteur : détection des formes effondrées (orbite périodique → `a` décalé de ±0,071, expliqué dans la fiche).
+- **Captures** : `art/docs/previews/v2/` (page du jour avec fiche dépliée pour Attracteur, Marée et un rendu provisoire, mobile, galerie mois et année). `capture:v2` vérifie aussi que chaque technique donne la même image d'un rendu et d'un chargement à l'autre.
+- **Reste à faire (toi)** : redéployer l'API (la migration 003 s'applique au build), puis lancer le premier gel sans attendre le cron : `curl https://<api>/cron/freeze-styles -H "Authorization: Bearer $CRON_SECRET"` (fige 2019 → aujourd'hui − 3, ~2 600 jours) ; vérifier `GET /day/<date>` → `style`. Redéployer `art`. Optionnel : `VITE_SELECTION_ORIGIN` (premier jour de l'historique) n'est utile qu'avant le premier gel.
+- **Reste à faire (agents)** : porter les 8 techniques (gabarit `art/src/engine-v2/techniques/_template.ts`, doc « Ajouter une technique ») ; Pelage et Réseau tournent déjà dans un Worker, prévoir `quality: "preview"` pour les vues année.
