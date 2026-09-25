@@ -37,7 +37,7 @@ Chaque phase se termine par quelque chose qui fonctionne. L'agent responsable de
 ## Phase 4 : déploiement (`deploy`)
 - [x] Configuration prête et vérifiée localement : fonction Vercel de l'API (bundle + migrations au build), `art/vercel.json`, crons dans `api/vercel.json`, CI et sauvegarde GitHub Actions, procédure docs/DEPLOY.md.
 - [x] API en fonctions Vercel + Postgres Neon, en ligne et vérifiée par `check-prod` (2026-09-25).
-- [ ] Page d'art sur Vercel.
+- [x] Page d'art sur Vercel, branchée sur l'API (CORS vérifié).
 - [x] HTTPS obligatoire (Android bloque le HTTP en clair) : redirection HTTP → HTTPS vérifiée.
 - [x] Secrets en variables d'environnement (INGEST_TOKEN, READ_TOKEN, CRON_SECRET vérifiés).
 - [ ] Sauvegarde automatique de la base (workflow GitHub Actions à configurer).
