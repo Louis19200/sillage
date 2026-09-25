@@ -20,7 +20,8 @@ import { HealthIngestBody, IngestResult, type HealthDay } from "@sillage/shared"
 import { buildHealthDays, parseSamsungCsv, sleepByDate, stepsByDate } from "../src/collectors/samsung-export/parse";
 import { loadDotenvFiles } from "../src/env";
 
-const BATCH = 365;
+/** Journées par requête : assez petit pour rester rapide même sur une API lente. */
+const BATCH = 100;
 const STEPS_FILE = /^com\.samsung\.shealth\.tracker\.pedometer_day_summary\..*\.csv$/;
 const SLEEP_FILE = /^com\.samsung\.shealth\.sleep_combined\..*\.csv$/;
 
@@ -116,19 +117,36 @@ async function main(): Promise<void> {
   let total = 0;
   for (let i = 0; i < days.length; i += BATCH) {
     const body = HealthIngestBody.parse({ days: days.slice(i, i + BATCH) });
-    const res = await fetch(`${apiUrl}/ingest/health`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(60_000),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      throw new Error(`envoi refusé (${res.status}) pour ${body.days[0]!.date} → ${body.days.at(-1)!.date} : ${text.slice(0, 300)}`);
+    const range = `${body.days[0]!.date} → ${body.days.at(-1)!.date}`;
+    let upserted: number | null = null;
+    for (let attempt = 1; upserted === null; attempt++) {
+      try {
+        const res = await fetch(`${apiUrl}/ingest/health`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(120_000),
+        });
+        const text = await res.text();
+        if (res.status === 400 || res.status === 401) {
+          // Erreur définitive : inutile de réessayer.
+          throw Object.assign(new Error(`envoi refusé (${res.status}) pour ${range} : ${text.slice(0, 300)}`), { fatal: true });
+        }
+        if (!res.ok) throw new Error(`statut ${res.status} : ${text.slice(0, 200)}`);
+        upserted = IngestResult.parse(JSON.parse(text)).upserted;
+      } catch (err) {
+        if ((err as { fatal?: boolean }).fatal || attempt >= 3) {
+          console.error(
+            `\nÉchec sur ${range} (${total} journées déjà importées, rien de perdu). ` +
+              "Relancer la même commande reprend sans créer de doublon.",
+          );
+          throw err;
+        }
+        console.log(`  ${range} : ${err instanceof Error ? err.message : String(err)}, nouvel essai (${attempt + 1}/3)…`);
+      }
     }
-    const { upserted } = IngestResult.parse(JSON.parse(text));
     total += upserted;
-    console.log(`  ${body.days[0]!.date} → ${body.days.at(-1)!.date} : ${upserted} journées enregistrées`);
+    console.log(`  ${range} : ${upserted} journées enregistrées (${Math.min(i + BATCH, days.length)}/${days.length})`);
   }
   console.log(`\nTerminé : ${total} journées importées.`);
 }

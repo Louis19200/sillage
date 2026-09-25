@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { DailyMetrics } from "@sillage/shared";
-import { buildHealthUpsert, type Db } from "../src/db";
+import { buildHealthUpsert, buildHealthUpsertBatch, type Db } from "../src/db";
 import { migrate } from "../src/migrate";
 import { createTestDb, resetTestDb } from "./helpers";
 
@@ -86,6 +86,31 @@ describe("upsertHealthDays", () => {
       db.upsertHealthDays([{ date: "2026-09-22", steps: 1 }, { date: "2026-02-30", steps: 2 }]),
     ).rejects.toThrow();
     expect(await countRows()).toBe(0);
+  });
+
+  it("lot : une requête par jeu de colonnes, quel que soit le nombre de journées", async () => {
+    const days = Array.from({ length: 400 }, (_, i) => {
+      const date = new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
+      return i % 2 === 0 ? { date, steps: i } : { date, steps: i, sleep_minutes: 400 };
+    });
+    expect(buildHealthUpsertBatch(days)).toHaveLength(2);
+    await db.upsertHealthDays(days);
+    expect(await countRows()).toBe(400);
+    expect(await db.getDay("2025-01-01")).toMatchObject({ steps: 0, sleep_minutes: null });
+    expect(await db.getDay("2025-01-02")).toMatchObject({ steps: 1, sleep_minutes: 400 });
+  });
+
+  it("lot : champs omis intacts, même date répétée fusionnée (la dernière valeur gagne)", async () => {
+    await db.upsertCommits([{ date: "2026-09-20", commits: 7 }]);
+    await db.upsertHealthDays([{ date: "2026-09-20", steps: 1, sleep_minutes: 300 }]);
+    await db.upsertHealthDays([
+      { date: "2026-09-20", steps: 2 },
+      { date: "2026-09-21", sleep_minutes: 420 },
+      { date: "2026-09-20", steps: 3 },
+    ]);
+    expect(await db.getDay("2026-09-20")).toMatchObject({ steps: 3, sleep_minutes: 300, commits: 7 });
+    expect(await db.getDay("2026-09-21")).toMatchObject({ steps: null, sleep_minutes: 420 });
+    expect(await countRows()).toBe(2);
   });
 
   it("paramètre toutes les valeurs (aucune valeur dans le SQL)", () => {
