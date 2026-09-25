@@ -12,6 +12,8 @@ import { Button } from "../components";
 import { computeLastCompleteDays, type ComputedHealthDay } from "../days";
 import { formatClock, formatDayLabel, formatSleepMinutes, formatSteps, MISSING } from "../format";
 import { healthConnectReader, openHealthConnectSettings, runDiagnostic } from "../healthConnect";
+import { locationDiagnosticLines } from "../locationDevice";
+import { loadSyncState } from "../settings";
 import { useTheme, type Theme } from "../theme";
 import { SyncPanel } from "./SyncPanel";
 
@@ -104,7 +106,13 @@ function DiagnosticPanel(props: { t: Theme }): ReactNode {
       } catch (e) {
         task = [`Tâche de fond : ERREUR ${e instanceof Error ? e.message : String(e)}`];
       }
-      setLines([...hc, ...task]);
+      let location: string[];
+      try {
+        location = await locationDiagnosticLines((await loadSyncState()).lastLocation);
+      } catch (e) {
+        location = [`Position : ERREUR ${e instanceof Error ? e.message : String(e)}`];
+      }
+      setLines([...hc, ...task, ...location]);
     } finally {
       setRunning(false);
     }

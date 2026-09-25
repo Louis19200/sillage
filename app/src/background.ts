@@ -10,6 +10,7 @@
  *   le système (Samsung).
  */
 import { localDateOf, type LocalDate } from "./days";
+import { captureDailyPosition } from "./location";
 import { EMPTY_SYNC_STATE, runSync, type BackgroundRun, type SyncDeps, type SyncState } from "./sync";
 
 /**
@@ -154,6 +155,9 @@ export async function runBackgroundTask(deps: BackgroundDeps): Promise<Backgroun
   try {
     const state = await safeLoad(deps);
     if (!needsDailySync(state, now)) {
+      // Rien à envoyer, mais on relève quand même la position du jour (dernière connue,
+      // sans allumer le GPS) si l'option est activée : elle partira avec la synchro de demain.
+      if (deps.location) await captureDailyPosition(deps.location, "last-known", now);
       run = {
         at: now.toISOString(),
         outcome: "skipped",

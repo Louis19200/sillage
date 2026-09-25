@@ -241,7 +241,7 @@ describe("runSync", () => {
 
 describe("parseSyncState", () => {
   it("valeur absente ou illisible : état vide", () => {
-    const empty = { lastAttempt: null, lastSuccess: null, lastBackground: null };
+    const empty = { lastAttempt: null, lastSuccess: null, lastBackground: null, lastLocation: null };
     expect(parseSyncState(null)).toEqual(empty);
     expect(parseSyncState("pas du json")).toEqual(empty);
     expect(parseSyncState('{"lastAttempt":{"at":1}}')).toEqual(empty);
